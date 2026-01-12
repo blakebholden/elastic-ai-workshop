@@ -1,0 +1,43 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: incident-search-api
+    environment:
+      - ES_URL=${ES_URL}
+      - ES_API_KEY=${ES_API_KEY}
+      - ES_INDEX=${ES_INDEX:-police-incidents}
+      - LLM_INFERENCE_ID=${LLM_INFERENCE_ID:-redhat-granite}
+      - LLM_API_KEY=${LLM_API_KEY:-}
+      - LLM_API_BASE=${LLM_API_BASE:-}
+      - LLM_MODEL=${LLM_MODEL:-granite-3-3-8b-instruct}
+      - DEBUG=${DEBUG:-false}
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: incident-search-ui
+    environment:
+      - REACT_APP_API_URL=/api
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+# To run:
+# 1. Copy .env.example to .env and fill in your credentials
+# 2. docker-compose up --build
+# 3. Access at http://localhost:3000
