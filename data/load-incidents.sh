@@ -6,7 +6,13 @@
 
 set -e
 
+# Source environment variables (ES_URL, ES_API_KEY)
+if [ -f /root/.env ]; then
+    source /root/.env
+fi
+
 ES_URL="${ES_URL:-http://localhost:9200}"
+ES_API_KEY="${ES_API_KEY:-}"
 ES_INDEX="${ES_INDEX:-police-incidents}"
 DATA_FILE="${1:-/root/data/police-incidents.json}"
 BATCH_SIZE=50
@@ -40,9 +46,16 @@ load_batch() {
     local batch_file=$1
     local response
 
-    response=$(curl -s -X POST "$ES_URL/$ES_INDEX/_bulk" \
-        -H "Content-Type: application/x-ndjson" \
-        --data-binary @"$batch_file")
+    if [ -n "$ES_API_KEY" ]; then
+        response=$(curl -s -X POST "$ES_URL/$ES_INDEX/_bulk" \
+            -H "Content-Type: application/x-ndjson" \
+            -H "Authorization: ApiKey $ES_API_KEY" \
+            --data-binary @"$batch_file")
+    else
+        response=$(curl -s -X POST "$ES_URL/$ES_INDEX/_bulk" \
+            -H "Content-Type: application/x-ndjson" \
+            --data-binary @"$batch_file")
+    fi
 
     # Check for errors
     errors=$(echo "$response" | jq -r '.errors')
@@ -126,7 +139,12 @@ fi
 echo ""
 echo "Verifying index count..."
 sleep 2
-INDEXED_COUNT=$(curl -s "$ES_URL/$ES_INDEX/_count" | jq '.count')
+if [ -n "$ES_API_KEY" ]; then
+    INDEXED_COUNT=$(curl -s "$ES_URL/$ES_INDEX/_count" \
+        -H "Authorization: ApiKey $ES_API_KEY" | jq '.count')
+else
+    INDEXED_COUNT=$(curl -s "$ES_URL/$ES_INDEX/_count" | jq '.count')
+fi
 echo "Documents in index: $INDEXED_COUNT"
 
 if [ "$INDEXED_COUNT" -ge "$TOTAL_DOCS" ]; then
