@@ -580,8 +580,8 @@ RESPONSE:"""
     # Step 3: Call the LLM
     try:
         llm_resp = await es_client.inference.inference(
-            inference_id=settings.llm_inference_id,
-            body={"input": prompt}
+            model_id=settings.llm_inference_id,
+            input=prompt
         )
 
         response_text = llm_resp.get("completion", [{}])[0].get("result", "Unable to generate response")
@@ -663,8 +663,8 @@ User question: {request.message}"""
     # Call LLM via Elasticsearch Inference API
     try:
         inference_resp = await es_client.inference.inference(
-            inference_id=settings.llm_inference_id,
-            body={"input": user_message},
+            model_id=settings.llm_inference_id,
+            input=user_message,
         )
         response_text = inference_resp.get("completion", [{}])[0].get("result", "Unable to generate response.")
     except Exception as e:
@@ -712,8 +712,8 @@ Provide a brief summary:"""
 
     try:
         inference_resp = await es_client.inference.inference(
-            inference_id=settings.llm_inference_id,
-            body={"input": prompt},
+            model_id=settings.llm_inference_id,
+            input=prompt,
         )
         summary = inference_resp.get("completion", [{}])[0].get("result", "Unable to generate summary.")
     except Exception as e:
