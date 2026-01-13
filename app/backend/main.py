@@ -87,21 +87,20 @@ async def health_check():
     settings = get_settings()
 
     try:
-        # Check ES cluster health
-        cluster_health = await es_client.cluster.health()
-
-        # Check index exists and get doc count
+        # For Serverless, we can't use cluster.health()
+        # Instead, check connectivity by getting index info and doc count
         index_exists = await es_client.indices.exists(index=settings.elasticsearch_index)
         doc_count = 0
         if index_exists:
             count_resp = await es_client.count(index=settings.elasticsearch_index)
             doc_count = count_resp["count"]
 
+        # If we got here, ES is reachable
         return HealthResponse(
             status="healthy",
             elasticsearch={
-                "status": cluster_health["status"],
-                "cluster_name": cluster_health["cluster_name"],
+                "status": "connected",
+                "cluster_name": "serverless",
             },
             index={
                 "name": settings.elasticsearch_index,
@@ -381,6 +380,63 @@ async def get_document(doc_id: str):
         raise HTTPException(status_code=404, detail=f"Document {doc_id} not found")
     except Exception as e:
         logger.error(f"Get document failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/documents/map", tags=["Documents"])
+async def get_documents_for_map(
+    incident_type: Optional[str] = Query(default=None),
+    district: Optional[str] = Query(default=None),
+    size: int = Query(default=500, ge=1, le=1000)
+):
+    """
+    Get documents with location data for map display.
+
+    Returns incidents with lat/lon coordinates for plotting on a map.
+    Optionally filter by incident_type and/or district.
+    """
+    settings = get_settings()
+
+    # Build filter clauses
+    filter_clauses = []
+    # Only return documents that have location data
+    filter_clauses.append({"exists": {"field": "location"}})
+
+    if incident_type:
+        filter_clauses.append({"term": {"incident_type": incident_type}})
+    if district:
+        filter_clauses.append({"term": {"district": district}})
+
+    query = {
+        "query": {
+            "bool": {
+                "filter": filter_clauses
+            }
+        },
+        "size": size,
+        "_source": [
+            "incident_id", "incident_type", "incident_subtype",
+            "incident_datetime", "district", "neighborhood",
+            "address_block", "location", "severity", "resolution"
+        ]
+    }
+
+    try:
+        resp = await es_client.search(index=settings.elasticsearch_index, body=query)
+
+        # Format for map display
+        incidents = []
+        for hit in resp["hits"]["hits"]:
+            source = hit["_source"]
+            if source.get("location"):
+                incidents.append({
+                    "id": hit["_id"],
+                    **source
+                })
+
+        return {"incidents": incidents, "total": len(incidents)}
+    except Exception as e:
+        logger.error(f"Map documents query failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
