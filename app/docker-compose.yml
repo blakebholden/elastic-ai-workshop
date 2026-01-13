@@ -2,21 +2,23 @@ version: '3.8'
 
 services:
   backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
+    image: ghcr.io/blakebholden/elastic-ai-workshop-backend:latest
     container_name: incident-search-api
     environment:
       - ES_URL=${ES_URL}
       - ES_API_KEY=${ES_API_KEY}
       - ES_INDEX=${ES_INDEX:-police-incidents}
       - LLM_INFERENCE_ID=${LLM_INFERENCE_ID:-redhat-granite}
-      - LLM_API_KEY=${LLM_API_KEY:-}
-      - LLM_API_BASE=${LLM_API_BASE:-}
-      - LLM_MODEL=${LLM_MODEL:-granite-3-3-8b-instruct}
+      - LLM_ENABLED=${LLM_ENABLED:-false}
+      - CHAT_ENABLED=${CHAT_ENABLED:-false}
       - DEBUG=${DEBUG:-false}
+    volumes:
+      # Mount backend source for hot-reload
+      - ./backend:/app
     ports:
       - "8000:8000"
+    # Use reload mode for development
+    command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
@@ -25,9 +27,7 @@ services:
     restart: unless-stopped
 
   frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
+    image: ghcr.io/blakebholden/elastic-ai-workshop-frontend:latest
     container_name: incident-search-ui
     environment:
       - REACT_APP_API_URL=/api
@@ -37,7 +37,10 @@ services:
       - backend
     restart: unless-stopped
 
-# To run:
+# Usage:
 # 1. Copy .env.example to .env and fill in your credentials
-# 2. docker-compose up --build
+# 2. docker-compose up -d
 # 3. Access at http://localhost:3000
+#
+# Images are pre-built and hosted on GitHub Container Registry.
+# Backend code changes auto-reload via volume mount.

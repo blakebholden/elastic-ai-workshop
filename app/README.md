@@ -35,6 +35,11 @@ A full-stack application demonstrating AI-powered search capabilities with Elast
   - **Hybrid**: RRF fusion of keyword + semantic
   - **Filtered**: Hybrid with metadata filters
 
+- **Interactive Map**: Visualize incidents geographically
+  - Color-coded by incident type
+  - Filter by district and crime type
+  - Click markers for incident details
+
 - **RAG Chat**: Ask questions about specific incidents
 - **AI Summaries**: Generate incident summaries
 
@@ -96,6 +101,7 @@ npm start
 | `/search/filtered` | POST | Filtered hybrid search |
 | `/document/{id}` | GET | Get single document |
 | `/documents/similar/{id}` | GET | Find similar documents |
+| `/documents/map` | GET | Get incidents for map view |
 | `/chat/document` | POST | Chat about a document |
 | `/chat/summarize` | POST | Generate summary |
 
