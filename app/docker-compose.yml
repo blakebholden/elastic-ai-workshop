@@ -11,15 +11,12 @@ services:
       - ES_API_KEY=${ES_API_KEY}
       - ES_INDEX=${ES_INDEX:-police-incidents}
       - LLM_INFERENCE_ID=${LLM_INFERENCE_ID:-redhat-granite}
-      - LLM_ENABLED=${LLM_ENABLED:-false}
+      - LLM_API_KEY=${LLM_API_KEY:-}
+      - LLM_API_BASE=${LLM_API_BASE:-}
+      - LLM_MODEL=${LLM_MODEL:-granite-3-3-8b-instruct}
       - DEBUG=${DEBUG:-false}
-    volumes:
-      # Mount backend source for hot-reload
-      - ./backend:/app
     ports:
       - "8000:8000"
-    # Use reload mode for development
-    command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
@@ -40,11 +37,7 @@ services:
       - backend
     restart: unless-stopped
 
-# Usage:
+# To run:
 # 1. Copy .env.example to .env and fill in your credentials
-# 2. docker-compose up -d --build
+# 2. docker-compose up --build
 # 3. Access at http://localhost:3000
-#
-# For code changes:
-# - Backend: Edit files in ./backend/ - changes auto-reload
-# - Frontend: Requires rebuild: docker-compose up -d --build frontend

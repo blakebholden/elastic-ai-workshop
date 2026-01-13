@@ -38,6 +38,13 @@ class SummarizeRequest(BaseModel):
     document_id: str = Field(..., description="Document ID to summarize")
 
 
+class GeneralChatRequest(BaseModel):
+    """General chat request (not document-specific)."""
+    message: str = Field(..., description="User message")
+    chat_history: List[dict] = Field(default=[], description="Previous messages")
+    max_context: int = Field(default=5, ge=1, le=10, description="Max documents for context")
+
+
 # =============================================================================
 # Response Models
 # =============================================================================
@@ -85,6 +92,13 @@ class ChatResponse(BaseModel):
     """Chat response."""
     response: str
     document_id: str
+
+
+class GeneralChatResponse(BaseModel):
+    """General chat response."""
+    response: str
+    sources: List[str] = Field(default=[], description="Source incident IDs")
+    source_count: int = Field(default=0, description="Number of sources used")
 
 
 class SummaryResponse(BaseModel):

@@ -19,9 +19,11 @@ from models import (
     HybridSearchRequest,
     ChatRequest,
     SummarizeRequest,
+    GeneralChatRequest,
     SearchResponse,
     SearchHit,
     ChatResponse,
+    GeneralChatResponse,
     SummaryResponse,
     HealthResponse,
     StatsResponse,
@@ -85,12 +87,11 @@ async def health_check():
     settings = get_settings()
 
     try:
-        # Check ES connectivity (Serverless-compatible)
-        info = await es_client.info()
+        # Check ES cluster health
+        cluster_health = await es_client.cluster.health()
 
         # Check index exists and get doc count
-        index_exists_resp = await es_client.indices.exists(index=settings.elasticsearch_index)
-        index_exists = bool(index_exists_resp)
+        index_exists = await es_client.indices.exists(index=settings.elasticsearch_index)
         doc_count = 0
         if index_exists:
             count_resp = await es_client.count(index=settings.elasticsearch_index)
@@ -99,8 +100,8 @@ async def health_check():
         return HealthResponse(
             status="healthy",
             elasticsearch={
-                "status": "available",
-                "cluster_name": info.get("cluster_name", "serverless"),
+                "status": cluster_health["status"],
+                "cluster_name": cluster_health["cluster_name"],
             },
             index={
                 "name": settings.elasticsearch_index,
@@ -149,6 +150,23 @@ async def get_stats():
     except Exception as e:
         logger.error(f"Stats query failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/features", tags=["Health"])
+async def get_features():
+    """
+    Get feature flags for the frontend.
+
+    Returns which features are enabled based on environment configuration.
+    Used by the frontend to show/hide or enable/disable UI components.
+    """
+    settings = get_settings()
+
+    return {
+        "llm_enabled": settings.llm_enabled,
+        "chat_enabled": settings.chat_enabled,
+        "llm_inference_id": settings.llm_inference_id if settings.llm_enabled else None,
+    }
 
 
 # =============================================================================
@@ -344,22 +362,6 @@ async def filtered_search(request: FilteredSearchRequest):
 
 
 # =============================================================================
-# WORKSHOP: Add Your Custom Endpoints Below (Challenge 6)
-# =============================================================================
-# This is where you'll add the /stats/by-district endpoint.
-# The endpoint uses Elasticsearch aggregations - similar to the queries
-# you ran in Dev Tools, but wrapped in a REST API.
-#
-# Pattern:
-#   1. Get settings with get_settings()
-#   2. Build your Elasticsearch query as a Python dict
-#   3. Execute with: await es_client.search(index=settings.elasticsearch_index, body=query)
-#   4. Format and return the response
-#
-# Add your @app.get("/stats/by-district") endpoint here:
-
-
-# =============================================================================
 # Document Endpoints
 # =============================================================================
 
@@ -410,67 +412,138 @@ async def similar_documents(doc_id: str, size: int = Query(default=5, ge=1, le=2
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/documents/map", tags=["Documents"])
-async def get_map_data(
-    incident_type: str = Query(default=None, description="Filter by incident type"),
-    district: str = Query(default=None, description="Filter by district"),
-    size: int = Query(default=500, ge=1, le=1000, description="Number of incidents to return")
-):
-    """
-    Get incidents with location data for map visualization.
-
-    Returns incidents that have lat/lon coordinates, optionally filtered
-    by incident type or district.
-    """
-    settings = get_settings()
-
-    # Build query with filters
-    must_clauses = [
-        {"exists": {"field": "location"}}
-    ]
-
-    if incident_type:
-        must_clauses.append({"term": {"incident_type": incident_type}})
-    if district:
-        must_clauses.append({"term": {"district": district}})
-
-    query = {
-        "query": {
-            "bool": {
-                "must": must_clauses
-            }
-        },
-        "size": size,
-        "_source": [
-            "incident_id",
-            "incident_type",
-            "incident_datetime",
-            "district",
-            "neighborhood",
-            "location",
-            "narrative",
-            "estimated_loss",
-            "arrest_made",
-            "severity"
-        ],
-        "sort": [{"incident_datetime": "desc"}]
-    }
-
-    try:
-        resp = await es_client.search(index=settings.elasticsearch_index, body=query)
-        incidents = [hit["_source"] for hit in resp["hits"]["hits"]]
-        return {
-            "total": resp["hits"]["total"]["value"],
-            "incidents": incidents
-        }
-    except Exception as e:
-        logger.error(f"Map data query failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
 # =============================================================================
 # Chat / RAG Endpoints
 # =============================================================================
+
+@app.post("/chat", response_model=GeneralChatResponse, tags=["Chat"])
+async def general_chat(request: GeneralChatRequest):
+    """
+    General RAG chat - search across all incidents and generate a response.
+
+    This endpoint powers the floating chat widget and allows users to ask
+    questions about incidents without specifying a particular document.
+    """
+    settings = get_settings()
+
+    # Check if chat is enabled
+    if not settings.chat_enabled:
+        raise HTTPException(
+            status_code=403,
+            detail="Chat feature is not enabled. Set CHAT_ENABLED=true in environment."
+        )
+
+    # Step 1: Search for relevant incidents using hybrid search
+    search_query = {
+        "retriever": {
+            "rrf": {
+                "retrievers": [
+                    {
+                        "standard": {
+                            "query": {
+                                "match": {"narrative": request.message}
+                            }
+                        }
+                    },
+                    {
+                        "standard": {
+                            "query": {
+                                "semantic": {
+                                    "field": "narrative_semantic",
+                                    "query": request.message
+                                }
+                            }
+                        }
+                    }
+                ]
+            }
+        },
+        "size": request.max_context,
+        "_source": ["incident_id", "incident_type", "narrative", "district", "incident_datetime", "estimated_loss"]
+    }
+
+    try:
+        search_resp = await es_client.search(
+            index=settings.elasticsearch_index,
+            body=search_query
+        )
+    except Exception as e:
+        logger.error(f"Chat search failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
+
+    # Extract retrieved documents
+    retrieved_docs = []
+    sources = []
+    for hit in search_resp["hits"]["hits"]:
+        doc = hit["_source"]
+        retrieved_docs.append(doc)
+        sources.append(doc.get("incident_id", "Unknown"))
+
+    if not retrieved_docs:
+        return GeneralChatResponse(
+            response="I couldn't find any relevant incidents matching your query. Try rephrasing your question.",
+            sources=[],
+            source_count=0
+        )
+
+    # Step 2: Build the augmented prompt
+    context_text = ""
+    for i, doc in enumerate(retrieved_docs, 1):
+        context_text += f"\n{i}. **{doc.get('incident_id', 'Unknown')}** ({doc.get('incident_type', 'Unknown')}) - {doc.get('district', 'Unknown')} District\n"
+        context_text += f"   Date: {doc.get('incident_datetime', 'Unknown')}\n"
+        if doc.get('estimated_loss', 0) > 0:
+            context_text += f"   Estimated Loss: ${doc.get('estimated_loss', 0):,.0f}\n"
+        narrative = doc.get('narrative', '')[:400]  # Truncate for prompt size
+        context_text += f"   Summary: {narrative}\n"
+
+    # Include chat history for context
+    history_text = ""
+    if request.chat_history:
+        history_text = "\nPrevious conversation:\n"
+        for msg in request.chat_history[-4:]:  # Last 4 messages
+            role = "User" if msg.get("role") == "user" else "Assistant"
+            history_text += f"{role}: {msg.get('content', '')}\n"
+
+    prompt = f"""You are a police department investigation assistant helping analysts review incident data.
+
+Based on the following incident reports, answer the user's question.
+{history_text}
+INCIDENT REPORTS:
+{context_text}
+
+USER QUESTION: {request.message}
+
+INSTRUCTIONS:
+- Reference specific incident IDs when making points
+- Keep your response concise (2-4 sentences)
+- If the incidents don't directly address the question, say so
+- Provide factual information from the records only
+
+RESPONSE:"""
+
+    # Step 3: Call the LLM
+    try:
+        llm_resp = await es_client.inference.inference(
+            inference_id=settings.llm_inference_id,
+            body={"input": prompt}
+        )
+
+        response_text = llm_resp.get("completion", [{}])[0].get("result", "Unable to generate response")
+
+    except Exception as e:
+        logger.error(f"LLM generation failed: {e}")
+        return GeneralChatResponse(
+            response=f"I found {len(retrieved_docs)} relevant incidents but couldn't generate a summary. Error: {str(e)}",
+            sources=sources,
+            source_count=len(sources)
+        )
+
+    return GeneralChatResponse(
+        response=response_text,
+        sources=sources,
+        source_count=len(sources)
+    )
+
 
 @app.post("/chat/document", response_model=ChatResponse, tags=["Chat"])
 async def chat_with_document(request: ChatRequest):

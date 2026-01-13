@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import axios from 'axios';
-import { X, Send, MessageCircle, FileText, Loader } from 'lucide-react';
+import { X, Send, MessageCircle, FileText, Loader, Lock } from 'lucide-react';
 
 const API_BASE = process.env.REACT_APP_API_URL || '';
 
@@ -11,8 +11,24 @@ function DocumentModal({ document, onClose }) {
   const [chatLoading, setChatLoading] = useState(false);
   const [summary, setSummary] = useState(null);
   const [summaryLoading, setSummaryLoading] = useState(false);
+  const [llmEnabled, setLlmEnabled] = useState(false);
+  const [showLlmTooltip, setShowLlmTooltip] = useState(false);
 
   const messagesEndRef = useRef(null);
+
+  // Fetch feature flags on mount
+  useEffect(() => {
+    const fetchFeatures = async () => {
+      try {
+        const resp = await axios.get(`${API_BASE}/features`);
+        setLlmEnabled(resp.data.llm_enabled);
+      } catch (err) {
+        console.error('Failed to fetch features:', err);
+        setLlmEnabled(false);
+      }
+    };
+    fetchFeatures();
+  }, []);
 
   useEffect(() => {
     // Reset chat when document changes
@@ -127,8 +143,15 @@ function DocumentModal({ document, onClose }) {
           </button>
           <button
             className={`modal-tab ${activeTab === 'chat' ? 'active' : ''}`}
-            onClick={() => setActiveTab('chat')}
+            onClick={() => llmEnabled && setActiveTab('chat')}
+            disabled={!llmEnabled}
+            style={{
+              opacity: llmEnabled ? 1 : 0.5,
+              cursor: llmEnabled ? 'pointer' : 'not-allowed',
+            }}
+            title={!llmEnabled ? 'Enable LLM in Challenge 8' : ''}
           >
+            {!llmEnabled && <Lock size={14} style={{ marginRight: 4 }} />}
             <MessageCircle size={16} style={{ marginRight: 6 }} />
             Chat with AI
           </button>
@@ -143,31 +166,61 @@ function DocumentModal({ document, onClose }) {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <h3>AI Summary</h3>
                   {!summary && (
-                    <button
-                      onClick={handleGenerateSummary}
-                      disabled={summaryLoading}
-                      style={{
-                        padding: '8px 16px',
-                        background: '#0077cc',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '4px',
-                        cursor: summaryLoading ? 'not-allowed' : 'pointer',
-                        fontSize: '13px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '6px',
-                      }}
+                    <div
+                      style={{ position: 'relative' }}
+                      onMouseEnter={() => !llmEnabled && setShowLlmTooltip(true)}
+                      onMouseLeave={() => setShowLlmTooltip(false)}
                     >
-                      {summaryLoading ? (
-                        <>
-                          <Loader size={14} className="spinning" />
-                          Generating...
-                        </>
-                      ) : (
-                        'Generate Summary'
+                      {showLlmTooltip && !llmEnabled && (
+                        <div
+                          style={{
+                            position: 'absolute',
+                            bottom: '100%',
+                            right: 0,
+                            marginBottom: '8px',
+                            padding: '8px 12px',
+                            background: '#343741',
+                            color: 'white',
+                            fontSize: '12px',
+                            borderRadius: '6px',
+                            whiteSpace: 'nowrap',
+                            zIndex: 10,
+                          }}
+                        >
+                          Enable LLM in Challenge 8
+                        </div>
                       )}
-                    </button>
+                      <button
+                        onClick={llmEnabled ? handleGenerateSummary : undefined}
+                        disabled={summaryLoading || !llmEnabled}
+                        style={{
+                          padding: '8px 16px',
+                          background: llmEnabled ? '#0077cc' : '#98a2b3',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '4px',
+                          cursor: (!llmEnabled || summaryLoading) ? 'not-allowed' : 'pointer',
+                          fontSize: '13px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                        }}
+                      >
+                        {!llmEnabled ? (
+                          <>
+                            <Lock size={14} />
+                            Generate Summary
+                          </>
+                        ) : summaryLoading ? (
+                          <>
+                            <Loader size={14} className="spinning" />
+                            Generating...
+                          </>
+                        ) : (
+                          'Generate Summary'
+                        )}
+                      </button>
+                    </div>
                   )}
                 </div>
                 {summary && (

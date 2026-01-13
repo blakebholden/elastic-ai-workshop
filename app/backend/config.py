@@ -25,6 +25,10 @@ class Settings(BaseSettings):
     app_version: str = "1.0.0"
     debug: bool = os.getenv("DEBUG", "false").lower() == "true"
 
+    # Feature flags
+    llm_enabled: bool = os.getenv("LLM_ENABLED", "false").lower() == "true"
+    chat_enabled: bool = os.getenv("CHAT_ENABLED", "false").lower() == "true"
+
     class Config:
         env_file = ".env"
         extra = "ignore"
