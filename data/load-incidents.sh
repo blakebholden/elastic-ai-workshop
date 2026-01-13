@@ -151,18 +151,11 @@ success_count=0
 echo "Loading documents..."
 echo ""
 
-# Process each document
-jq -c '.[]' "$DATA_FILE" | while read -r doc; do
-    # Get the incident_id for the document ID
-    id=$(echo "$doc" | jq -r '.incident_id')
-
-    # Add narrative_semantic field (copy of narrative for semantic search)
-    narrative=$(echo "$doc" | jq -r '.narrative')
-    doc=$(echo "$doc" | jq --arg ns "$narrative" '. + {narrative_semantic: $ns}')
-
-    # Write action and document to batch file
-    echo "{\"index\":{\"_id\":\"$id\"}}" >> "$BATCH_FILE"
-    echo "$doc" >> "$BATCH_FILE"
+# Process each document - use jq to add narrative_semantic and output both lines
+jq -c '.[] | {action: {index: {_id: .incident_id}}, doc: (. + {narrative_semantic: .narrative})}' "$DATA_FILE" | while read -r item; do
+    # Extract action and doc as separate lines
+    echo "$item" | jq -c '.action' >> "$BATCH_FILE"
+    echo "$item" | jq -c '.doc' >> "$BATCH_FILE"
 
     doc_count=$((doc_count + 1))
 
