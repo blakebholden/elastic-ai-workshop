@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Search, FileText, Brain, Layers, Filter, MapPin, Calendar, AlertTriangle, DollarSign, Star } from 'lucide-react';
+import { Search, FileText, Brain, Layers, Filter, MapPin, Calendar, AlertTriangle, DollarSign, Star, Lock } from 'lucide-react';
 import DocumentModal from '../components/DocumentModal';
 
 const API_BASE = process.env.REACT_APP_API_URL || '';
@@ -12,6 +12,7 @@ const SEARCH_TYPES = [
     description: 'Traditional BM25 text matching',
     icon: Search,
     endpoint: '/search/keyword',
+    requiresHybrid: false,
   },
   {
     id: 'semantic',
@@ -19,6 +20,7 @@ const SEARCH_TYPES = [
     description: 'ELSER-powered meaning search',
     icon: Brain,
     endpoint: '/search/semantic',
+    requiresHybrid: false,
   },
   {
     id: 'hybrid',
@@ -26,6 +28,7 @@ const SEARCH_TYPES = [
     description: 'Best of both with RRF fusion',
     icon: Layers,
     endpoint: '/search/hybrid',
+    requiresHybrid: true,
   },
   {
     id: 'filtered',
@@ -33,6 +36,7 @@ const SEARCH_TYPES = [
     description: 'Hybrid + metadata filters',
     icon: Filter,
     endpoint: '/search/filtered',
+    requiresHybrid: true,
   },
 ];
 
@@ -60,18 +64,52 @@ const DISTRICTS = [
 const SEVERITIES = ['All Severities', 'Felony', 'Misdemeanor'];
 
 function SearchPage() {
-  const [searchType, setSearchType] = useState('hybrid');
+  const [searchType, setSearchType] = useState('keyword');
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
   const [selectedDoc, setSelectedDoc] = useState(null);
+  const [hybridEnabled, setHybridEnabled] = useState(false);
+  const [featuresLoaded, setFeaturesLoaded] = useState(false);
 
   // Filters
   const [incidentType, setIncidentType] = useState('All Types');
   const [district, setDistrict] = useState('All Districts');
   const [severity, setSeverity] = useState('All Severities');
+
+  // Fetch feature flags and recent documents on mount
+  useEffect(() => {
+    const fetchFeatures = async () => {
+      try {
+        const resp = await axios.get(`${API_BASE}/features`);
+        setHybridEnabled(resp.data.hybrid_enabled);
+        // If hybrid is enabled, default to hybrid search
+        if (resp.data.hybrid_enabled) {
+          setSearchType('hybrid');
+        }
+      } catch (err) {
+        console.error('Failed to fetch features:', err);
+        setHybridEnabled(false);
+      } finally {
+        setFeaturesLoaded(true);
+      }
+    };
+
+    const fetchRecentDocuments = async () => {
+      try {
+        const resp = await axios.get(`${API_BASE}/documents/recent?size=20`);
+        setResults(resp.data.hits || []);
+        setTotal(resp.data.total || 0);
+      } catch (err) {
+        console.error('Failed to fetch recent documents:', err);
+      }
+    };
+
+    fetchFeatures();
+    fetchRecentDocuments();
+  }, []);
 
   const handleSearch = async (e) => {
     if (e) e.preventDefault();
@@ -152,16 +190,23 @@ function SearchPage() {
         <div className="search-type-buttons">
           {SEARCH_TYPES.map((type) => {
             const Icon = type.icon;
+            const isDisabled = type.requiresHybrid && !hybridEnabled;
             return (
               <button
                 key={type.id}
-                className={`search-type-btn ${searchType === type.id ? 'active' : ''}`}
-                onClick={() => setSearchType(type.id)}
+                className={`search-type-btn ${searchType === type.id ? 'active' : ''} ${isDisabled ? 'disabled' : ''}`}
+                onClick={() => !isDisabled && setSearchType(type.id)}
+                disabled={isDisabled}
+                title={isDisabled ? 'Complete Challenge 6 to enable hybrid search' : ''}
               >
-                <Icon size={20} className="icon" />
+                {isDisabled ? (
+                  <Lock size={20} className="icon locked" />
+                ) : (
+                  <Icon size={20} className="icon" />
+                )}
                 <div className="search-type-info">
                   <h4>{type.name}</h4>
-                  <p>{type.description}</p>
+                  <p>{isDisabled ? 'Enable in Challenge 6' : type.description}</p>
                 </div>
               </button>
             );
@@ -234,15 +279,24 @@ function SearchPage() {
             Search
           </button>
         </form>
+        {!searched && results.length > 0 && (
+          <p className="search-hint">
+            Try: "armed robbery", "vehicle theft", "domestic disturbance", or "elderly victim"
+          </p>
+        )}
 
         {/* Results Info */}
-        {searched && !loading && (
+        {!loading && results.length > 0 && (
           <div className="results-info">
             <span>
-              Found <span className="count">{total.toLocaleString()}</span> incidents
+              {searched ? (
+                <>Found <span className="count">{total.toLocaleString()}</span> incidents</>
+              ) : (
+                <>Showing <span className="count">{results.length}</span> recent incidents</>
+              )}
             </span>
             <span className="search-type-badge">
-              {SEARCH_TYPES.find((t) => t.id === searchType)?.name} Search
+              {searched ? `${SEARCH_TYPES.find((t) => t.id === searchType)?.name} Search` : 'Most Recent'}
             </span>
           </div>
         )}
@@ -255,24 +309,12 @@ function SearchPage() {
           </div>
         )}
 
-        {/* Empty State */}
+        {/* Empty State - only show after a search with no results */}
         {!loading && searched && results.length === 0 && (
           <div className="empty-state">
             <FileText size={48} strokeWidth={1} />
             <h3>No incidents found</h3>
             <p>Try adjusting your search terms or filters</p>
-          </div>
-        )}
-
-        {/* Initial State */}
-        {!loading && !searched && (
-          <div className="empty-state">
-            <Search size={48} strokeWidth={1} />
-            <h3>Search Police Incidents</h3>
-            <p>Enter a query to search through incident reports</p>
-            <p style={{ marginTop: '12px', fontSize: '14px', color: '#98a2b3' }}>
-              Try: "armed robbery", "vehicle theft parking garage", "domestic disturbance"
-            </p>
           </div>
         )}
 

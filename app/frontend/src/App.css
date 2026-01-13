@@ -98,6 +98,27 @@ body {
   color: white;
 }
 
+.search-type-btn.disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  background: #f5f7fa;
+  border-color: #d3dae6;
+}
+
+.search-type-btn.disabled:hover {
+  border-color: #d3dae6;
+  background: #f5f7fa;
+}
+
+.search-type-btn .icon.locked {
+  color: #98a2b3;
+}
+
+.search-type-btn.disabled .search-type-info p {
+  color: #98a2b3;
+  font-style: italic;
+}
+
 .search-type-btn .icon {
   margin-right: 12px;
   opacity: 0.7;
@@ -169,7 +190,13 @@ body {
 .search-bar {
   display: flex;
   gap: 12px;
-  margin-bottom: 20px;
+  margin-bottom: 12px;
+}
+
+.search-hint {
+  margin: 0 0 16px 0;
+  font-size: 13px;
+  color: #98a2b3;
 }
 
 .search-input {

@@ -26,7 +26,9 @@ class Settings(BaseSettings):
     debug: bool = os.getenv("DEBUG", "false").lower() == "true"
 
     # Feature flags
+    hybrid_enabled: bool = os.getenv("HYBRID_ENABLED", "false").lower() == "true"
     llm_enabled: bool = os.getenv("LLM_ENABLED", "false").lower() == "true"
+    rag_enabled: bool = os.getenv("RAG_ENABLED", "false").lower() == "true"
     chat_enabled: bool = os.getenv("CHAT_ENABLED", "false").lower() == "true"
 
     class Config:
