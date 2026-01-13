@@ -8,6 +8,8 @@ services:
       - ES_URL=${ES_URL}
       - ES_API_KEY=${ES_API_KEY}
       - ES_INDEX=${ES_INDEX:-police-incidents}
+      - HYBRID_ENABLED=${HYBRID_ENABLED:-false}
+      - RAG_ENABLED=${RAG_ENABLED:-false}
       - LLM_INFERENCE_ID=${LLM_INFERENCE_ID:-redhat-granite}
       - LLM_ENABLED=${LLM_ENABLED:-false}
       - CHAT_ENABLED=${CHAT_ENABLED:-false}
