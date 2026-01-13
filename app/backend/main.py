@@ -20,10 +20,13 @@ from models import (
     ChatRequest,
     SummarizeRequest,
     GeneralChatRequest,
+    AgentChatRequest,
     SearchResponse,
     SearchHit,
     ChatResponse,
     GeneralChatResponse,
+    AgentChatResponse,
+    ToolCall,
     SummaryResponse,
     HealthResponse,
     StatsResponse,
@@ -164,6 +167,8 @@ async def get_features():
     return {
         "llm_enabled": settings.llm_enabled,
         "chat_enabled": settings.chat_enabled,
+        "agent_enabled": settings.agent_enabled,
+        "agent_id": settings.agent_id if settings.agent_enabled else None,
         "llm_inference_id": settings.llm_inference_id if settings.llm_enabled else None,
     }
 
@@ -605,6 +610,7 @@ RESPONSE:"""
     try:
         llm_resp = await es_client.inference.inference(
             model_id=settings.llm_inference_id,
+            task_type="completion",
             input=prompt
         )
 
@@ -688,6 +694,7 @@ User question: {request.message}"""
     try:
         inference_resp = await es_client.inference.inference(
             model_id=settings.llm_inference_id,
+            task_type="completion",
             input=user_message,
         )
         response_text = inference_resp.get("completion", [{}])[0].get("result", "Unable to generate response.")
@@ -705,9 +712,16 @@ User question: {request.message}"""
     return ChatResponse(response=response_text, document_id=request.document_id)
 
 
-@app.post("/chat/summarize", response_model=SummaryResponse, tags=["Chat"])
-async def summarize_document(request: SummarizeRequest):
-    """Generate a brief summary of an incident."""
+@app.post("/rag/summarize", response_model=SummaryResponse, tags=["RAG"])
+async def rag_summarize(request: SummarizeRequest):
+    """
+    RAG Summarization endpoint.
+
+    This endpoint demonstrates the RAG (Retrieve-Augment-Generate) pattern:
+    1. RETRIEVE: Get the document from Elasticsearch
+    2. AUGMENT: Build a prompt with the document context
+    3. GENERATE: Call the LLM to produce a summary
+    """
     settings = get_settings()
 
     # Get the document
@@ -737,6 +751,7 @@ Provide a brief summary:"""
     try:
         inference_resp = await es_client.inference.inference(
             model_id=settings.llm_inference_id,
+            task_type="completion",
             input=prompt,
         )
         summary = inference_resp.get("completion", [{}])[0].get("result", "Unable to generate summary.")
@@ -752,6 +767,88 @@ Provide a brief summary:"""
             summary += "• Injuries were reported"
 
     return SummaryResponse(summary=summary, document_id=request.document_id)
+
+
+@app.post("/agent/chat", response_model=AgentChatResponse, tags=["Agent"])
+async def agent_chat(request: AgentChatRequest):
+    """
+    Chat with the Police Investigation Assistant via Agent Builder API.
+
+    This endpoint proxies requests to the Kibana Agent Builder API,
+    providing programmatic access to the configured agent with its
+    custom ES|QL and search tools.
+    """
+    import httpx
+
+    settings = get_settings()
+
+    # Check if agent is enabled
+    if not settings.agent_enabled:
+        raise HTTPException(
+            status_code=403,
+            detail="Agent chat is not enabled. Set AGENT_ENABLED=true in environment."
+        )
+
+    # Validate Kibana URL is configured
+    if not settings.kibana_url:
+        raise HTTPException(
+            status_code=503,
+            detail="Kibana URL not configured. Set KIBANA_URL in environment."
+        )
+
+    # Call Kibana Agent Builder API
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            response = await client.post(
+                f"{settings.kibana_url}/api/ai/agents/{settings.agent_id}/chat",
+                headers={
+                    "kbn-xsrf": "true",
+                    "Authorization": f"ApiKey {settings.elasticsearch_api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "message": request.message,
+                    "conversationId": request.conversation_id,
+                }
+            )
+
+            if response.status_code != 200:
+                logger.error(f"Agent API error: {response.status_code} - {response.text}")
+                raise HTTPException(
+                    status_code=response.status_code,
+                    detail=f"Agent API error: {response.text}"
+                )
+
+            result = response.json()
+
+    except httpx.TimeoutException:
+        logger.error("Agent API request timed out")
+        raise HTTPException(
+            status_code=504,
+            detail="Agent request timed out. The query may be too complex."
+        )
+    except httpx.RequestError as e:
+        logger.error(f"Agent API connection error: {e}")
+        raise HTTPException(
+            status_code=503,
+            detail=f"Could not connect to Agent Builder API: {str(e)}"
+        )
+
+    # Parse tool calls from response
+    tool_calls = []
+    for tc in result.get("toolCalls", []):
+        tool_calls.append(ToolCall(
+            tool=tc.get("tool", "unknown"),
+            parameters=tc.get("parameters", {}),
+            result=tc.get("result")
+        ))
+
+    return AgentChatResponse(
+        response=result.get("response", "No response from agent."),
+        tool_calls=tool_calls,
+        sources=result.get("sources", []),
+        conversation_id=result.get("conversationId")
+    )
 
 
 # =============================================================================

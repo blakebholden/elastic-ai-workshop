@@ -45,6 +45,12 @@ class GeneralChatRequest(BaseModel):
     max_context: int = Field(default=5, ge=1, le=10, description="Max documents for context")
 
 
+class AgentChatRequest(BaseModel):
+    """Agent Builder chat request."""
+    message: str = Field(..., description="User message to the agent")
+    conversation_id: Optional[str] = Field(default=None, description="Conversation ID for multi-turn")
+
+
 # =============================================================================
 # Response Models
 # =============================================================================
@@ -99,6 +105,21 @@ class GeneralChatResponse(BaseModel):
     response: str
     sources: List[str] = Field(default=[], description="Source incident IDs")
     source_count: int = Field(default=0, description="Number of sources used")
+
+
+class ToolCall(BaseModel):
+    """Agent tool execution details."""
+    tool: str = Field(..., description="Tool name that was executed")
+    parameters: dict = Field(default={}, description="Parameters passed to the tool")
+    result: Optional[Any] = Field(default=None, description="Tool execution result")
+
+
+class AgentChatResponse(BaseModel):
+    """Agent Builder chat response."""
+    response: str = Field(..., description="Agent's generated response")
+    tool_calls: List[ToolCall] = Field(default=[], description="Tools executed by the agent")
+    sources: List[str] = Field(default=[], description="Referenced incident IDs")
+    conversation_id: Optional[str] = Field(default=None, description="Conversation ID for multi-turn")
 
 
 class SummaryResponse(BaseModel):

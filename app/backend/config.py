@@ -30,6 +30,11 @@ class Settings(BaseSettings):
     llm_enabled: bool = os.getenv("LLM_ENABLED", "false").lower() == "true"
     rag_enabled: bool = os.getenv("RAG_ENABLED", "false").lower() == "true"
     chat_enabled: bool = os.getenv("CHAT_ENABLED", "false").lower() == "true"
+    agent_enabled: bool = os.getenv("AGENT_ENABLED", "false").lower() == "true"
+
+    # Agent Builder integration
+    agent_id: str = os.getenv("AGENT_ID", "police-investigation-assistant")
+    kibana_url: str = os.getenv("KIBANA_URL", "")
 
     class Config:
         env_file = ".env"

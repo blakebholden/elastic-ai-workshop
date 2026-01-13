@@ -15,7 +15,7 @@ A full-stack application demonstrating AI-powered search capabilities with Elast
 │              FastAPI Backend                                 │
 │                  Port 8000                                   │
 │  /search/keyword | /search/semantic | /search/hybrid        │
-│  /search/filtered | /chat/document | /chat/summarize        │
+│  /search/filtered | /chat/document | /rag/summarize        │
 └─────────────────────┬───────────────────────────────────────┘
                       │
                       ▼
@@ -103,7 +103,7 @@ npm start
 | `/documents/similar/{id}` | GET | Find similar documents |
 | `/documents/map` | GET | Get incidents for map view |
 | `/chat/document` | POST | Chat about a document |
-| `/chat/summarize` | POST | Generate summary |
+| `/rag/summarize` | POST | Generate summary |
 
 ## Search Request Example
 

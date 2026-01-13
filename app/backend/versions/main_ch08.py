@@ -592,6 +592,7 @@ async def rag_summarize(request: SummarizeRequest):
         # Example:
         # inference_resp = await es_client.inference.inference(
         #     model_id=settings.llm_inference_id,
+        #     task_type="completion",
         #     input=prompt,
         # )
 
