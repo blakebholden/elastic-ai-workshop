@@ -6,10 +6,15 @@ Phase 3: RAG Summarization
 This version includes:
 - Everything from Challenge 6 (hybrid search COMPLETED)
 - Stats endpoint
-- RAG summarize endpoint (/rag/summarize)
+- RAG summarize endpoint with TODO placeholders (fill-in-blank exercise)
 
-Hybrid search is now fully functional.
-RAG summarization requires LLM_ENABLED=true and RAG_ENABLED=true.
+EXERCISE: Complete the rag_summarize() endpoint by filling in the TODO sections.
+Follow the step-by-step instructions in the assignment to build each component.
+
+The RAG pattern:
+1. RETRIEVE - Get the document from Elasticsearch
+2. AUGMENT - Build a prompt with the document context
+3. GENERATE - Call the LLM to produce a summary
 """
 import logging
 from contextlib import asynccontextmanager
@@ -494,7 +499,10 @@ async def rag_summarize(request: SummarizeRequest):
     2. AUGMENT: Build a prompt with the document context
     3. GENERATE: Call the LLM to generate a summary
 
-    Requires LLM_ENABLED=true and RAG_ENABLED=true.
+    ============================================================================
+    EXERCISE: Complete this endpoint by filling in the TODO sections below.
+    Follow the instructions in the assignment document step by step.
+    ============================================================================
     """
     settings = get_settings()
 
@@ -507,16 +515,32 @@ async def rag_summarize(request: SummarizeRequest):
     if not settings.rag_enabled:
         raise HTTPException(
             status_code=403,
-            detail="RAG not enabled. Set RAG_ENABLED=true in .env"
+            detail="RAG not enabled. Complete the exercise below, then set RAG_ENABLED=true in .env"
         )
 
-    # Step 1: RETRIEVE - Get the document
+    # =========================================================================
+    # Step 1: RETRIEVE - Get the document from Elasticsearch
+    # =========================================================================
+    # We need to fetch the incident document that the user wants summarized.
+    # The document_id comes from the request.
+    #
+    # TODO: Retrieve the document using es_client.get()
+    # Hint: Use request.document_id as the document ID
+    #
     try:
-        doc_resp = await es_client.get(
-            index=settings.elasticsearch_index,
-            id=request.document_id,
-            source_excludes=["narrative_semantic"],
-        )
+        doc_resp = None  # YOUR CODE HERE - Replace with es_client.get() call
+        # Example:
+        # doc_resp = await es_client.get(
+        #     index=settings.elasticsearch_index,
+        #     id=request.document_id,
+        #     source_excludes=["narrative_semantic"],
+        # )
+
+        if doc_resp is None:
+            raise HTTPException(
+                status_code=500,
+                detail="Step 1 incomplete: Add the es_client.get() call to retrieve the document"
+            )
         document = doc_resp["_source"]
     except NotFoundError:
         raise HTTPException(
@@ -524,29 +548,63 @@ async def rag_summarize(request: SummarizeRequest):
             detail=f"Document {request.document_id} not found"
         )
 
+    # =========================================================================
     # Step 2: AUGMENT - Build the prompt with document context
-    prompt = f"""Summarize this police incident in 2-3 bullet points. Focus on: what happened, where, and the outcome.
+    # =========================================================================
+    # This is where RAG differs from basic LLM calls - we inject real data
+    # into the prompt so the LLM can generate a grounded response.
+    #
+    # TODO: Build a prompt string that includes:
+    # - Instructions for the LLM (what kind of summary to produce)
+    # - The incident details (type, location, resolution)
+    # - The narrative text from the document
+    #
+    prompt = ""  # YOUR CODE HERE - Build the prompt string
+    # Example:
+    # prompt = f"""Summarize this police incident in 2-3 bullet points. Focus on: what happened, where, and the outcome.
+    #
+    # Incident Type: {document.get('incident_type', 'Unknown')}
+    # Location: {document.get('address_block', 'Unknown')}, {document.get('district', '')} District
+    # Resolution: {document.get('resolution', 'Unknown')}
+    #
+    # Narrative:
+    # {document.get('narrative', 'No narrative available.')}
+    #
+    # Provide a brief summary:"""
 
-Incident Type: {document.get('incident_type', 'Unknown')}
-Location: {document.get('address_block', 'Unknown')}, {document.get('district', '')} District
-Resolution: {document.get('resolution', 'Unknown')}
-
-Narrative:
-{document.get('narrative', 'No narrative available.')}
-
-Provide a brief summary:"""
-
-    # Step 3: GENERATE - Call the LLM via Elasticsearch Inference API
-    try:
-        inference_resp = await es_client.inference.inference(
-            model_id=settings.llm_inference_id,
-            input=prompt,
+    if not prompt:
+        raise HTTPException(
+            status_code=500,
+            detail="Step 2 incomplete: Build the prompt string with document context"
         )
+
+    # =========================================================================
+    # Step 3: GENERATE - Call the LLM via Elasticsearch Inference API
+    # =========================================================================
+    # Now we send our augmented prompt to the LLM. Elasticsearch's Inference
+    # API handles the connection to the configured LLM (RedHat Granite).
+    #
+    # TODO: Call the LLM using es_client.inference.inference()
+    # Hint: Use settings.llm_inference_id as the model_id
+    #
+    try:
+        inference_resp = None  # YOUR CODE HERE - Replace with inference API call
+        # Example:
+        # inference_resp = await es_client.inference.inference(
+        #     model_id=settings.llm_inference_id,
+        #     input=prompt,
+        # )
+
+        if inference_resp is None:
+            raise HTTPException(
+                status_code=500,
+                detail="Step 3 incomplete: Add the es_client.inference.inference() call"
+            )
+
         summary = inference_resp.get("completion", [{}])[0].get("result", "Unable to generate summary.")
     except Exception as e:
         logger.warning(f"LLM summarize failed: {e}")
-        # Fallback to extractive summary
-        narrative = document.get("narrative", "")
+        # Fallback to extractive summary if LLM fails
         summary = f"- {document.get('incident_type', 'Incident')} at {document.get('address_block', 'unknown location')}\n"
         summary += f"- Resolution: {document.get('resolution', 'Unknown')}\n"
         if document.get("arrest_made"):

@@ -12,6 +12,8 @@ function DocumentModal({ document, onClose }) {
   const [summary, setSummary] = useState(null);
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [llmEnabled, setLlmEnabled] = useState(false);
+  const [ragEnabled, setRagEnabled] = useState(false);
+  const [chatEnabled, setChatEnabled] = useState(false);
   const [showLlmTooltip, setShowLlmTooltip] = useState(false);
 
   const messagesEndRef = useRef(null);
@@ -22,9 +24,13 @@ function DocumentModal({ document, onClose }) {
       try {
         const resp = await axios.get(`${API_BASE}/features`);
         setLlmEnabled(resp.data.llm_enabled);
+        setRagEnabled(resp.data.rag_enabled);
+        setChatEnabled(resp.data.chat_enabled);
       } catch (err) {
         console.error('Failed to fetch features:', err);
         setLlmEnabled(false);
+        setRagEnabled(false);
+        setChatEnabled(false);
       }
     };
     fetchFeatures();
@@ -79,7 +85,7 @@ function DocumentModal({ document, onClose }) {
 
     setSummaryLoading(true);
     try {
-      const resp = await axios.post(`${API_BASE}/chat/summarize`, {
+      const resp = await axios.post(`${API_BASE}/rag/summarize`, {
         document_id: document.id || document.incident_id,
       });
       setSummary(resp.data.summary);
@@ -143,15 +149,15 @@ function DocumentModal({ document, onClose }) {
           </button>
           <button
             className={`modal-tab ${activeTab === 'chat' ? 'active' : ''}`}
-            onClick={() => llmEnabled && setActiveTab('chat')}
-            disabled={!llmEnabled}
+            onClick={() => chatEnabled && setActiveTab('chat')}
+            disabled={!chatEnabled}
             style={{
-              opacity: llmEnabled ? 1 : 0.5,
-              cursor: llmEnabled ? 'pointer' : 'not-allowed',
+              opacity: chatEnabled ? 1 : 0.5,
+              cursor: chatEnabled ? 'pointer' : 'not-allowed',
             }}
-            title={!llmEnabled ? 'Enable LLM in Challenge 8' : ''}
+            title={!chatEnabled ? 'Enable Chat in Challenge 10' : ''}
           >
-            {!llmEnabled && <Lock size={14} style={{ marginRight: 4 }} />}
+            {!chatEnabled && <Lock size={14} style={{ marginRight: 4 }} />}
             <MessageCircle size={16} style={{ marginRight: 6 }} />
             Chat with AI
           </button>
@@ -168,10 +174,10 @@ function DocumentModal({ document, onClose }) {
                   {!summary && (
                     <div
                       style={{ position: 'relative' }}
-                      onMouseEnter={() => !llmEnabled && setShowLlmTooltip(true)}
+                      onMouseEnter={() => !ragEnabled && setShowLlmTooltip(true)}
                       onMouseLeave={() => setShowLlmTooltip(false)}
                     >
-                      {showLlmTooltip && !llmEnabled && (
+                      {showLlmTooltip && !ragEnabled && (
                         <div
                           style={{
                             position: 'absolute',
@@ -187,26 +193,26 @@ function DocumentModal({ document, onClose }) {
                             zIndex: 10,
                           }}
                         >
-                          Enable LLM in Challenge 8
+                          Complete Challenge 8 RAG Pipeline
                         </div>
                       )}
                       <button
-                        onClick={llmEnabled ? handleGenerateSummary : undefined}
-                        disabled={summaryLoading || !llmEnabled}
+                        onClick={ragEnabled ? handleGenerateSummary : undefined}
+                        disabled={summaryLoading || !ragEnabled}
                         style={{
                           padding: '8px 16px',
-                          background: llmEnabled ? '#0077cc' : '#98a2b3',
+                          background: ragEnabled ? '#0077cc' : '#98a2b3',
                           color: 'white',
                           border: 'none',
                           borderRadius: '4px',
-                          cursor: (!llmEnabled || summaryLoading) ? 'not-allowed' : 'pointer',
+                          cursor: (!ragEnabled || summaryLoading) ? 'not-allowed' : 'pointer',
                           fontSize: '13px',
                           display: 'flex',
                           alignItems: 'center',
                           gap: '6px',
                         }}
                       >
-                        {!llmEnabled ? (
+                        {!ragEnabled ? (
                           <>
                             <Lock size={14} />
                             Generate Summary
