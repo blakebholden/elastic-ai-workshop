@@ -89,7 +89,8 @@ async def health_check():
         info = await es_client.info()
 
         # Check index exists and get doc count
-        index_exists = await es_client.indices.exists(index=settings.elasticsearch_index)
+        index_exists_resp = await es_client.indices.exists(index=settings.elasticsearch_index)
+        index_exists = bool(index_exists_resp)
         doc_count = 0
         if index_exists:
             count_resp = await es_client.count(index=settings.elasticsearch_index)
