@@ -11,10 +11,11 @@ import {
   EuiIcon,
   EuiBadge,
 } from '@elastic/eui';
-import { Shield, Search, Activity } from 'lucide-react';
+import { Shield, Search, Activity, Map } from 'lucide-react';
 import axios from 'axios';
 
 import SearchPage from './pages/SearchPage';
+import MapPage from './pages/MapPage';
 import './App.css';
 
 const API_BASE = process.env.REACT_APP_API_URL || '';
@@ -70,6 +71,12 @@ function App() {
                 >
                   <Link to="/">Search</Link>
                 </EuiHeaderLink>
+                <EuiHeaderLink
+                  iconType="mapMarker"
+                  isActive={location.pathname === '/map'}
+                >
+                  <Link to="/map">Map</Link>
+                </EuiHeaderLink>
               </EuiHeaderLinks>
             </EuiHeaderSectionItem>
             <EuiHeaderSectionItem>
@@ -91,6 +98,7 @@ function App() {
         >
           <Routes>
             <Route path="/" element={<SearchPage />} />
+            <Route path="/map" element={<MapPage />} />
           </Routes>
         </EuiPageTemplate>
       </div>

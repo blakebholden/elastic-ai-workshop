@@ -576,6 +576,243 @@ body {
   cursor: not-allowed;
 }
 
+/* =============================================================================
+   Map Page Styles
+   ============================================================================= */
+
+.map-page {
+  display: flex;
+  height: calc(100vh - 48px);
+  overflow: hidden;
+}
+
+.map-controls {
+  width: 300px;
+  background: white;
+  border-right: 1px solid #d3dae6;
+  padding: 20px;
+  overflow-y: auto;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.map-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.map-header h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 18px;
+  color: #343741;
+}
+
+.incident-count {
+  font-size: 12px;
+  color: #69707d;
+  background: #f5f7fa;
+  padding: 4px 10px;
+  border-radius: 12px;
+}
+
+.map-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.filter-toggle,
+.refresh-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border: 1px solid #d3dae6;
+  border-radius: 6px;
+  background: white;
+  cursor: pointer;
+  font-size: 13px;
+  color: #343741;
+  transition: all 0.15s ease;
+}
+
+.filter-toggle:hover,
+.refresh-btn:hover {
+  border-color: #0077cc;
+  background: #f0f7ff;
+}
+
+.filter-toggle.active {
+  border-color: #0077cc;
+  background: #0077cc;
+  color: white;
+}
+
+.refresh-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.spinning {
+  animation: spin 1s linear infinite;
+}
+
+.map-filters {
+  padding: 16px;
+  background: #f5f7fa;
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.map-filters .filter-group {
+  margin-bottom: 0;
+}
+
+.map-legend {
+  margin-top: auto;
+  padding-top: 16px;
+  border-top: 1px solid #d3dae6;
+}
+
+.map-legend h4 {
+  font-size: 12px;
+  font-weight: 600;
+  color: #69707d;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin: 0 0 12px 0;
+}
+
+.legend-items {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  font-size: 13px;
+}
+
+.legend-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  margin-right: 8px;
+  flex-shrink: 0;
+}
+
+.legend-label {
+  flex: 1;
+  color: #343741;
+}
+
+.legend-count {
+  color: #69707d;
+  font-size: 12px;
+}
+
+.map-container {
+  flex: 1;
+  position: relative;
+}
+
+.map-loading,
+.map-error {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 1000;
+  background: white;
+  padding: 20px 30px;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  text-align: center;
+}
+
+.map-error {
+  color: #bd271e;
+}
+
+/* Leaflet Popup Styles */
+.map-popup {
+  min-width: 200px;
+}
+
+.map-popup h3 {
+  margin: 0 0 8px 0;
+  font-size: 14px;
+  font-family: monospace;
+  color: #343741;
+}
+
+.map-popup .popup-type {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: white;
+  margin-bottom: 8px;
+}
+
+.map-popup .popup-date {
+  font-size: 12px;
+  color: #69707d;
+  margin: 0 0 4px 0;
+}
+
+.map-popup .popup-location {
+  font-size: 12px;
+  color: #69707d;
+  margin: 0 0 8px 0;
+}
+
+.map-popup .popup-loss {
+  font-size: 12px;
+  font-weight: 600;
+  color: #343741;
+  margin: 0 0 8px 0;
+}
+
+.map-popup .popup-narrative {
+  font-size: 12px;
+  color: #343741;
+  line-height: 1.5;
+  margin: 0;
+  border-top: 1px solid #d3dae6;
+  padding-top: 8px;
+}
+
+.map-popup .popup-arrest {
+  display: inline-block;
+  padding: 3px 8px;
+  background: #e6f8f0;
+  color: #00726b;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  margin-top: 8px;
+}
+
+/* Override Leaflet default styles */
+.leaflet-popup-content-wrapper {
+  border-radius: 8px;
+}
+
+.leaflet-popup-content {
+  margin: 12px;
+}
+
 /* Responsive */
 @media (max-width: 768px) {
   .search-page {
@@ -599,6 +836,21 @@ body {
   }
 
   .filter-section {
+    display: none;
+  }
+
+  .map-page {
+    flex-direction: column;
+  }
+
+  .map-controls {
+    width: 100%;
+    max-height: 200px;
+    border-right: none;
+    border-bottom: 1px solid #d3dae6;
+  }
+
+  .map-legend {
     display: none;
   }
 }

@@ -344,6 +344,22 @@ async def filtered_search(request: FilteredSearchRequest):
 
 
 # =============================================================================
+# WORKSHOP: Add Your Custom Endpoints Below (Challenge 6)
+# =============================================================================
+# This is where you'll add the /stats/by-district endpoint.
+# The endpoint uses Elasticsearch aggregations - similar to the queries
+# you ran in Dev Tools, but wrapped in a REST API.
+#
+# Pattern:
+#   1. Get settings with get_settings()
+#   2. Build your Elasticsearch query as a Python dict
+#   3. Execute with: await es_client.search(index=settings.elasticsearch_index, body=query)
+#   4. Format and return the response
+#
+# Add your @app.get("/stats/by-district") endpoint here:
+
+
+# =============================================================================
 # Document Endpoints
 # =============================================================================
 
@@ -391,6 +407,64 @@ async def similar_documents(doc_id: str, size: int = Query(default=5, ge=1, le=2
         return _format_search_response(resp, "similar")
     except Exception as e:
         logger.error(f"Similar documents search failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/documents/map", tags=["Documents"])
+async def get_map_data(
+    incident_type: str = Query(default=None, description="Filter by incident type"),
+    district: str = Query(default=None, description="Filter by district"),
+    size: int = Query(default=500, ge=1, le=1000, description="Number of incidents to return")
+):
+    """
+    Get incidents with location data for map visualization.
+
+    Returns incidents that have lat/lon coordinates, optionally filtered
+    by incident type or district.
+    """
+    settings = get_settings()
+
+    # Build query with filters
+    must_clauses = [
+        {"exists": {"field": "location"}}
+    ]
+
+    if incident_type:
+        must_clauses.append({"term": {"incident_type": incident_type}})
+    if district:
+        must_clauses.append({"term": {"district": district}})
+
+    query = {
+        "query": {
+            "bool": {
+                "must": must_clauses
+            }
+        },
+        "size": size,
+        "_source": [
+            "incident_id",
+            "incident_type",
+            "incident_datetime",
+            "district",
+            "neighborhood",
+            "location",
+            "narrative",
+            "estimated_loss",
+            "arrest_made",
+            "severity"
+        ],
+        "sort": [{"incident_datetime": "desc"}]
+    }
+
+    try:
+        resp = await es_client.search(index=settings.elasticsearch_index, body=query)
+        incidents = [hit["_source"] for hit in resp["hits"]["hits"]]
+        return {
+            "total": resp["hits"]["total"]["value"],
+            "incidents": incidents
+        }
+    except Exception as e:
+        logger.error(f"Map data query failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
