@@ -11,6 +11,9 @@ RUN npm install
 # Copy source
 COPY . .
 
+# Set API URL for React build (baked in at build time)
+ENV REACT_APP_API_URL=/api
+
 # Build the app
 RUN npm run build
 
