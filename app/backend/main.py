@@ -89,7 +89,7 @@ async def health_check():
     try:
         # For Serverless, we can't use cluster.health()
         # Instead, check connectivity by getting index info and doc count
-        index_exists = await es_client.indices.exists(index=settings.elasticsearch_index)
+        index_exists = bool(await es_client.indices.exists(index=settings.elasticsearch_index))
         doc_count = 0
         if index_exists:
             count_resp = await es_client.count(index=settings.elasticsearch_index)
