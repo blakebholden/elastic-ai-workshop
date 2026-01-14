@@ -759,27 +759,64 @@ Narrative:
 {document.get('narrative', 'No narrative available.')}
 """
 
-    # Build chat prompt
-    user_message = f"""Based on this incident report:
+    # Build message with document context for Agent Builder
+    user_message = f"""I'm looking at this specific incident report:
 
 {context}
 
-User question: {request.message}"""
+My question: {request.message}
 
-    # Call LLM via Elasticsearch Inference API
-    try:
-        inference_resp = await es_client.inference.inference(
-            model_id=settings.llm_inference_id,
-            task_type="completion",
-            input=user_message,
-        )
-        response_text = inference_resp.get("completion", [{}])[0].get("result", "Unable to generate response.")
-    except Exception as e:
-        logger.warning(f"Inference API call failed: {e}")
-        raise HTTPException(
-            status_code=503,
-            detail="LLM service unavailable. Please try again later.",
-        )
+Please answer based on this incident. If I ask about related incidents, use your search tools to find them."""
+
+    # Use Agent Builder API if enabled (preferred)
+    if settings.agent_enabled and settings.kibana_url:
+        import httpx
+        try:
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                response = await client.post(
+                    f"{settings.kibana_url}/api/agent_builder/converse",
+                    headers={
+                        "kbn-xsrf": "true",
+                        "Authorization": f"ApiKey {settings.elasticsearch_api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "input": user_message,
+                        "agent_id": settings.agent_id,
+                    }
+                )
+
+                if response.status_code == 200:
+                    result = response.json()
+                    response_data = result.get("response", {})
+                    if isinstance(response_data, dict):
+                        response_text = response_data.get("message", "Unable to generate response.")
+                    else:
+                        response_text = str(response_data) if response_data else "Unable to generate response."
+                else:
+                    logger.warning(f"Agent API returned {response.status_code}, falling back to inference")
+                    raise Exception("Agent API error")
+        except Exception as e:
+            logger.warning(f"Agent Builder call failed: {e}, trying ES Inference API")
+            response_text = None
+    else:
+        response_text = None
+
+    # Fallback to Elasticsearch Inference API
+    if response_text is None:
+        try:
+            inference_resp = await es_client.inference.inference(
+                model_id=settings.llm_inference_id,
+                task_type="completion",
+                input=user_message,
+            )
+            response_text = inference_resp.get("completion", [{}])[0].get("result", "Unable to generate response.")
+        except Exception as e:
+            logger.warning(f"Inference API call failed: {e}")
+            raise HTTPException(
+                status_code=503,
+                detail="LLM service unavailable. Please try again later.",
+            )
 
     return ChatResponse(response=response_text, document_id=request.document_id)
 
