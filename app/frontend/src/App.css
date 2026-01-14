@@ -815,6 +815,30 @@ body {
   border-top: 1px solid #d3dae6;
   font-size: 11px;
   color: #69707d;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.chat-widget-map-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  background: #e6f0f8;
+  color: #0077cc;
+  border: 1px solid #0077cc;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.chat-widget-map-btn:hover {
+  background: #0077cc;
+  color: white;
 }
 
 .chat-widget-input-area {
@@ -968,8 +992,45 @@ body {
 
 .map-page {
   display: flex;
+  flex-direction: column;
   height: calc(100vh - 48px);
   overflow: hidden;
+}
+
+.map-layout {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+.map-highlight-banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 10px 16px;
+  background: linear-gradient(135deg, #0077cc 0%, #005fa3 100%);
+  color: white;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.clear-highlight-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  background: rgba(255, 255, 255, 0.2);
+  color: white;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.clear-highlight-btn:hover {
+  background: rgba(255, 255, 255, 0.3);
 }
 
 .map-controls {

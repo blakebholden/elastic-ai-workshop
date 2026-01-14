@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import axios from 'axios';
-import { MessageCircle, X, Send, Loader, Lock, Bot, Zap } from 'lucide-react';
+import { MessageCircle, X, Send, Loader, Lock, Bot, Zap, MapPin } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
 const API_BASE = process.env.REACT_APP_API_URL || '';
 
@@ -17,6 +18,21 @@ function ChatWidget() {
   const [conversationId, setConversationId] = useState(null);
 
   const messagesEndRef = useRef(null);
+  const navigate = useNavigate();
+
+  // Handle "View on Map" click
+  const handleViewOnMap = (incidentIds) => {
+    if (incidentIds && incidentIds.length > 0) {
+      const ids = incidentIds.join(',');
+      navigate(`/map?highlight=${encodeURIComponent(ids)}`);
+      setIsOpen(false); // Close chat panel
+    }
+  };
+
+  // Check if sources contain incident IDs
+  const hasIncidentIds = (sources) => {
+    return sources && sources.length > 0 && sources.some(s => s.startsWith('INC-'));
+  };
 
   // Fetch feature flags on mount
   useEffect(() => {
@@ -223,6 +239,15 @@ function ChatWidget() {
                 {msg.sources && msg.sources.length > 0 && (
                   <div className="chat-widget-sources">
                     Sources: {msg.sources.join(', ')}
+                    {hasIncidentIds(msg.sources) && (
+                      <button
+                        className="chat-widget-map-btn"
+                        onClick={() => handleViewOnMap(msg.sources.filter(s => s.startsWith('INC-')))}
+                      >
+                        <MapPin size={14} />
+                        View on Map
+                      </button>
+                    )}
                   </div>
                 )}
               </div>

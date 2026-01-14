@@ -889,10 +889,17 @@ async def agent_chat(request: AgentChatRequest):
     else:
         response_text = str(response_data) if response_data else "No response from agent."
 
+    # Extract incident IDs from response text for "View on Map" feature
+    import re
+    incident_ids = re.findall(r'INC-\d{4}-\d+', response_text)
+    # Remove duplicates while preserving order
+    seen = set()
+    unique_ids = [x for x in incident_ids if not (x in seen or seen.add(x))]
+
     return AgentChatResponse(
         response=response_text,
         tool_calls=tool_calls,
-        sources=result.get("sources", []),
+        sources=unique_ids if unique_ids else result.get("sources", []),
         conversation_id=result.get("conversationId")
     )
 

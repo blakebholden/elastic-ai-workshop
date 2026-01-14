@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { MapContainer, TileLayer, CircleMarker, Popup, useMap } from 'react-leaflet';
+import { useSearchParams } from 'react-router-dom';
 import axios from 'axios';
-import { RefreshCw, Filter, Layers } from 'lucide-react';
+import { RefreshCw, Filter, Layers, X } from 'lucide-react';
 import 'leaflet/dist/leaflet.css';
 
 const API_BASE = process.env.REACT_APP_API_URL || '';
@@ -63,16 +64,38 @@ function FitBounds({ incidents }) {
 }
 
 function MapPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [incidents, setIncidents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selectedType, setSelectedType] = useState('All Types');
   const [selectedDistrict, setSelectedDistrict] = useState('All Districts');
   const [showFilters, setShowFilters] = useState(false);
+  const [highlightedIds, setHighlightedIds] = useState([]);
 
   // Seattle area center (based on data coordinates)
   const defaultCenter = [47.58, -122.30];
   const defaultZoom = 11;
+
+  // Read highlighted incidents from URL on mount
+  useEffect(() => {
+    const highlight = searchParams.get('highlight');
+    if (highlight) {
+      const ids = highlight.split(',').map(id => decodeURIComponent(id.trim()));
+      setHighlightedIds(ids);
+    }
+  }, [searchParams]);
+
+  // Clear highlight mode
+  const clearHighlight = () => {
+    setHighlightedIds([]);
+    setSearchParams({});
+  };
+
+  // Check if an incident is highlighted
+  const isHighlighted = (incidentId) => {
+    return highlightedIds.includes(incidentId);
+  };
 
   useEffect(() => {
     loadIncidents();
@@ -149,6 +172,21 @@ function MapPage() {
 
   return (
     <div className="map-page">
+      {/* Highlight Banner */}
+      {highlightedIds.length > 0 && (
+        <div className="map-highlight-banner">
+          <span>
+            Showing {highlightedIds.length} incident{highlightedIds.length > 1 ? 's' : ''} from chat
+          </span>
+          <button onClick={clearHighlight} className="clear-highlight-btn">
+            <X size={14} />
+            Clear
+          </button>
+        </div>
+      )}
+
+      {/* Map Layout - Controls + Map Container */}
+      <div className="map-layout">
       {/* Map Controls */}
       <div className="map-controls">
         <div className="map-header">
@@ -257,16 +295,19 @@ function MapPage() {
 
           {incidents
             .filter(inc => inc.location?.lat && inc.location?.lon)
-            .map((incident, idx) => (
+            .map((incident, idx) => {
+              const highlighted = isHighlighted(incident.incident_id);
+              return (
               <CircleMarker
                 key={incident.incident_id || idx}
                 center={[incident.location.lat, incident.location.lon]}
-                radius={8}
-                fillColor={getColor(incident.incident_type)}
-                color="#fff"
-                weight={2}
+                radius={highlighted ? 14 : 8}
+                fillColor={highlighted ? '#0077cc' : getColor(incident.incident_type)}
+                color={highlighted ? '#ffc107' : '#fff'}
+                weight={highlighted ? 4 : 2}
                 opacity={1}
-                fillOpacity={0.8}
+                fillOpacity={highlighted ? 0.9 : 0.8}
+                className={highlighted ? 'highlighted-marker' : ''}
               >
                 <Popup>
                   <div className="map-popup">
@@ -297,8 +338,10 @@ function MapPage() {
                   </div>
                 </Popup>
               </CircleMarker>
-            ))}
+              );
+            })}
         </MapContainer>
+      </div>
       </div>
     </div>
   );
