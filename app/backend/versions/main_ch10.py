@@ -873,8 +873,15 @@ async def agent_chat(request: AgentChatRequest):
             result=tc.get("result")
         ))
 
+    # Extract response message - API returns {"response": {"message": "..."}}
+    response_data = result.get("response", {})
+    if isinstance(response_data, dict):
+        response_text = response_data.get("message", "No response from agent.")
+    else:
+        response_text = str(response_data) if response_data else "No response from agent."
+
     return AgentChatResponse(
-        response=result.get("response", "No response from agent."),
+        response=response_text,
         tool_calls=tool_calls,
         sources=result.get("sources", []),
         conversation_id=result.get("conversationId")
