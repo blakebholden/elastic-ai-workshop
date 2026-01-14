@@ -1,10 +1,12 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { X, Send, MessageCircle, FileText, Loader, Lock } from 'lucide-react';
+import { X, Send, MessageCircle, FileText, Loader, Lock, MapPin } from 'lucide-react';
 
 const API_BASE = process.env.REACT_APP_API_URL || '';
 
 function DocumentModal({ document, onClose }) {
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('content');
   const [chatMessages, setChatMessages] = useState([]);
   const [inputMessage, setInputMessage] = useState('');
@@ -17,6 +19,21 @@ function DocumentModal({ document, onClose }) {
   const [showLlmTooltip, setShowLlmTooltip] = useState(false);
 
   const messagesEndRef = useRef(null);
+
+  // Handle "View on Map" click
+  const handleViewOnMap = (incidentIds) => {
+    if (incidentIds && incidentIds.length > 0) {
+      const ids = incidentIds.join(',');
+      navigate(`/map?highlight=${encodeURIComponent(ids)}`);
+      onClose(); // Close modal
+    }
+  };
+
+  // Extract incident IDs from text
+  const extractIncidentIds = (text) => {
+    const matches = text.match(/INC-\d{4}-\d+/g) || [];
+    return [...new Set(matches)]; // Remove duplicates
+  };
 
   // Fetch feature flags on mount
   useEffect(() => {
@@ -402,11 +419,48 @@ function DocumentModal({ document, onClose }) {
                 </div>
               )}
 
-              {chatMessages.map((msg, idx) => (
-                <div key={idx} className={`chat-message ${msg.role}`}>
-                  {msg.content}
-                </div>
-              ))}
+              {chatMessages.map((msg, idx) => {
+                const incidentIds = msg.role === 'assistant' ? extractIncidentIds(msg.content) : [];
+                return (
+                  <div key={idx} className={`chat-message ${msg.role}`}>
+                    <div>{msg.content}</div>
+                    {incidentIds.length > 0 && (
+                      <div style={{
+                        marginTop: '10px',
+                        paddingTop: '10px',
+                        borderTop: '1px solid rgba(0,0,0,0.1)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        flexWrap: 'wrap'
+                      }}>
+                        <span style={{ fontSize: '12px', color: '#69707d' }}>
+                          Related: {incidentIds.join(', ')}
+                        </span>
+                        <button
+                          onClick={() => handleViewOnMap(incidentIds)}
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            padding: '4px 8px',
+                            background: '#e6f0f8',
+                            color: '#0077cc',
+                            border: '1px solid #0077cc',
+                            borderRadius: '4px',
+                            fontSize: '11px',
+                            fontWeight: '500',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          <MapPin size={12} />
+                          View on Map
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
 
               {chatLoading && (
                 <div className="chat-message assistant">
