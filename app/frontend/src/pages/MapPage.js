@@ -163,8 +163,13 @@ function MapPage() {
     }).format(value);
   };
 
-  // Count incidents by type for legend
-  const typeCounts = incidents.reduce((acc, inc) => {
+  // Filter incidents for display (when highlighting, only show highlighted ones)
+  const displayedIncidents = highlightedIds.length > 0
+    ? incidents.filter(inc => isHighlighted(inc.incident_id))
+    : incidents;
+
+  // Count incidents by type for legend (use displayed incidents)
+  const typeCounts = displayedIncidents.reduce((acc, inc) => {
     const type = inc.incident_type || 'Unknown';
     acc[type] = (acc[type] || 0) + 1;
     return acc;
@@ -195,7 +200,7 @@ function MapPage() {
             Incident Map
           </h2>
           <span className="incident-count">
-            {incidents.length.toLocaleString()} incidents
+            {displayedIncidents.length.toLocaleString()} incident{displayedIncidents.length !== 1 ? 's' : ''}
           </span>
         </div>
 
@@ -291,12 +296,12 @@ function MapPage() {
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
 
-          <FitBounds incidents={incidents} />
+          <FitBounds incidents={displayedIncidents} />
 
-          {incidents
+          {displayedIncidents
             .filter(inc => inc.location?.lat && inc.location?.lon)
             .map((incident, idx) => {
-              const highlighted = isHighlighted(incident.incident_id);
+              const highlighted = highlightedIds.length > 0;
               return (
               <CircleMarker
                 key={incident.incident_id || idx}
