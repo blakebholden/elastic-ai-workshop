@@ -13,6 +13,9 @@ services:
       - LLM_INFERENCE_ID=${LLM_INFERENCE_ID:-redhat-granite}
       - LLM_ENABLED=${LLM_ENABLED:-false}
       - CHAT_ENABLED=${CHAT_ENABLED:-false}
+      - AGENT_ENABLED=${AGENT_ENABLED:-false}
+      - AGENT_ID=${AGENT_ID:-police-investigation-assistant}
+      - KIBANA_URL=${KIBANA_URL}
       - DEBUG=${DEBUG:-false}
     volumes:
       # Mount backend source for hot-reload

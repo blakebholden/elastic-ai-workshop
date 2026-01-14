@@ -826,18 +826,19 @@ async def agent_chat(request: AgentChatRequest):
         )
 
     # Call Kibana Agent Builder API
+    # API docs: https://www.elastic.co/docs/explore-analyze/ai-features/agent-builder/kibana-api
     try:
         async with httpx.AsyncClient(timeout=60.0) as client:
             response = await client.post(
-                f"{settings.kibana_url}/api/ai/agents/{settings.agent_id}/chat",
+                f"{settings.kibana_url}/api/agent_builder/converse",
                 headers={
                     "kbn-xsrf": "true",
                     "Authorization": f"ApiKey {settings.elasticsearch_api_key}",
                     "Content-Type": "application/json",
                 },
                 json={
-                    "message": request.message,
-                    "conversationId": request.conversation_id,
+                    "input": request.message,
+                    "agent_id": settings.agent_id,
                 }
             )
 
