@@ -98,7 +98,7 @@ EOF
 }
 
 # =============================================================================
-# CHECKPOINT 2: ELSER Deployed
+# CHECKPOINT 2: ELSER Deployed (verification only - users deploy in Challenge 4)
 # =============================================================================
 checkpoint_2() {
     echo "=== Checkpoint 2: ELSER Deployed ==="
@@ -110,11 +110,8 @@ checkpoint_2() {
         -H "Content-Type: application/json" 2>/dev/null | jq -r '.inference_id // empty')
 
     if [ -z "$ELSER_CHECK" ]; then
-        log_warn "ELSER not deployed"
-        log_fixing "Deploying ELSER using workshop script..."
-        /opt/workshops/elastic-semantic.sh -e true -s true
-        sleep 10
-        log_info "ELSER deployment initiated"
+        log_warn "ELSER not deployed - users will deploy in Challenge 4"
+        # Don't auto-deploy - users do this manually in Challenge 4
     else
         log_info "ELSER is deployed"
     fi
