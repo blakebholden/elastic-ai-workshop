@@ -602,7 +602,7 @@ User question: {request.message}"""
     # Call LLM via Elasticsearch Inference API
     try:
         inference_resp = await es_client.inference.inference(
-            inference_id=settings.llm_inference_id,
+            model_id=settings.llm_inference_id,
             task_type="completion",
             input=user_message,
         )
