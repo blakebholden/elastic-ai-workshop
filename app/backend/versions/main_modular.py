@@ -13,6 +13,7 @@ from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.responses import StreamingResponse
 from elasticsearch import AsyncElasticsearch, NotFoundError
 
 from config import get_settings
@@ -766,6 +767,186 @@ async def agent_chat(request: AgentChatRequest):
         tool_calls=tool_calls,
         sources=[],
         conversation_id=result.get("conversation_id")
+    )
+
+
+@app.post("/agent/chat/stream", tags=["Agent"])
+async def agent_chat_stream(request: AgentChatRequest):
+    """
+    Stream chat with Agent Builder using Server-Sent Events.
+
+    Returns real-time progress as the agent processes your request:
+    - reasoning: Agent's thinking process
+    - tool_call: When a tool is selected
+    - tool_progress: Tool execution updates
+    - tool_result: Tool completion results
+    - message_chunk: Streaming response text
+    - message_complete: Final response
+    """
+    import httpx
+
+    settings = get_settings()
+
+    if not settings.agent_enabled:
+        raise HTTPException(status_code=403, detail="Agent chat is not enabled.")
+
+    if not settings.kibana_url:
+        raise HTTPException(status_code=503, detail="Kibana URL not configured.")
+
+    async def event_generator():
+        """Generate SSE events from Kibana Agent Builder stream."""
+        try:
+            async with httpx.AsyncClient(timeout=120.0) as client:
+                request_body = {
+                    "input": request.message,
+                    "agent_id": settings.agent_id,
+                }
+                if request.conversation_id:
+                    request_body["conversation_id"] = request.conversation_id
+
+                async with client.stream(
+                    "POST",
+                    f"{settings.kibana_url}/api/agent_builder/converse/async",
+                    headers={
+                        "kbn-xsrf": "true",
+                        "Authorization": f"ApiKey {settings.elasticsearch_api_key}",
+                        "Content-Type": "application/json",
+                        "Accept": "text/event-stream",
+                    },
+                    json=request_body
+                ) as response:
+                    if response.status_code != 200:
+                        error_text = await response.aread()
+                        yield f"event: error\ndata: {error_text.decode()}\n\n"
+                        return
+
+                    # Stream events from Kibana to the client
+                    async for line in response.aiter_lines():
+                        if line:
+                            # Pass through the SSE events from Kibana
+                            yield f"{line}\n"
+                        else:
+                            # Empty line marks end of event
+                            yield "\n"
+
+        except httpx.TimeoutException:
+            yield f"event: error\ndata: {{\"error\": \"Request timed out\"}}\n\n"
+        except httpx.RequestError as e:
+            yield f"event: error\ndata: {{\"error\": \"Connection error: {str(e)}\"}}\n\n"
+        except Exception as e:
+            logger.error(f"Stream error: {e}")
+            yield f"event: error\ndata: {{\"error\": \"Stream error: {str(e)}\"}}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",  # Disable nginx buffering
+        }
+    )
+
+
+@app.post("/chat/document/stream", tags=["Chat"])
+async def chat_with_document_stream(request: ChatRequest):
+    """
+    Stream chat about a specific document using Agent Builder.
+
+    Similar to /agent/chat/stream but includes document context.
+    """
+    import httpx
+
+    settings = get_settings()
+
+    # Get the document first
+    try:
+        doc_resp = await es_client.get(
+            index=settings.elasticsearch_index,
+            id=request.document_id,
+            source_excludes=["narrative_semantic"],
+        )
+        document = doc_resp["_source"]
+    except NotFoundError:
+        raise HTTPException(
+            status_code=404, detail=f"Document {request.document_id} not found"
+        )
+
+    # Build context from document
+    context = f"""Police Incident Report:
+- Incident ID: {document.get('incident_id', 'Unknown')}
+- Type: {document.get('incident_type', 'Unknown')} - {document.get('incident_subtype', '')}
+- Date/Time: {document.get('incident_datetime', 'Unknown')}
+- Location: {document.get('address_block', 'Unknown')}, {document.get('neighborhood', '')} ({document.get('district', '')} District)
+- Severity: {document.get('severity', 'Unknown')}
+- Resolution: {document.get('resolution', 'Unknown')}
+- Arrest Made: {document.get('arrest_made', 'Unknown')}
+- Injuries Reported: {document.get('injuries_reported', 'Unknown')}
+- Weapon Involved: {document.get('weapon_involved', 'None')}
+- Estimated Loss: ${document.get('estimated_loss', 0):,.2f}
+
+Narrative:
+{document.get('narrative', 'No narrative available.')}
+"""
+
+    user_message = f"""I'm asking about this specific incident report:
+
+{context}
+
+My question: {request.message}"""
+
+    if not settings.kibana_url or not settings.agent_enabled:
+        raise HTTPException(status_code=503, detail="Agent Builder not configured for streaming.")
+
+    async def event_generator():
+        """Generate SSE events from Kibana Agent Builder stream."""
+        try:
+            async with httpx.AsyncClient(timeout=120.0) as client:
+                request_body = {
+                    "input": user_message,
+                    "agent_id": settings.agent_id,
+                }
+                if request.conversation_id:
+                    request_body["conversation_id"] = request.conversation_id
+
+                async with client.stream(
+                    "POST",
+                    f"{settings.kibana_url}/api/agent_builder/converse/async",
+                    headers={
+                        "kbn-xsrf": "true",
+                        "Authorization": f"ApiKey {settings.elasticsearch_api_key}",
+                        "Content-Type": "application/json",
+                        "Accept": "text/event-stream",
+                    },
+                    json=request_body
+                ) as response:
+                    if response.status_code != 200:
+                        error_text = await response.aread()
+                        yield f"event: error\ndata: {error_text.decode()}\n\n"
+                        return
+
+                    async for line in response.aiter_lines():
+                        if line:
+                            yield f"{line}\n"
+                        else:
+                            yield "\n"
+
+        except httpx.TimeoutException:
+            yield f"event: error\ndata: {{\"error\": \"Request timed out\"}}\n\n"
+        except httpx.RequestError as e:
+            yield f"event: error\ndata: {{\"error\": \"Connection error: {str(e)}\"}}\n\n"
+        except Exception as e:
+            logger.error(f"Document stream error: {e}")
+            yield f"event: error\ndata: {{\"error\": \"Stream error: {str(e)}\"}}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        }
     )
 
 

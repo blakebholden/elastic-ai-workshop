@@ -1232,3 +1232,266 @@ body {
   font-size: 12px;
   border-radius: 6px;
 }
+
+/* =============================================================================
+   Markdown Rendering in Chat Messages
+   ============================================================================= */
+
+.chat-widget-message-content p {
+  margin: 0 0 8px 0;
+}
+
+.chat-widget-message-content p:last-child {
+  margin-bottom: 0;
+}
+
+.chat-widget-message-content h1,
+.chat-widget-message-content h2,
+.chat-widget-message-content h3,
+.chat-widget-message-content h4 {
+  margin: 12px 0 8px 0;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.chat-widget-message-content h1 { font-size: 16px; }
+.chat-widget-message-content h2 { font-size: 15px; }
+.chat-widget-message-content h3 { font-size: 14px; }
+.chat-widget-message-content h4 { font-size: 13px; }
+
+.chat-widget-message-content ul,
+.chat-widget-message-content ol {
+  margin: 8px 0;
+  padding-left: 20px;
+}
+
+.chat-widget-message-content li {
+  margin: 4px 0;
+}
+
+.chat-widget-message-content code {
+  background: rgba(0, 0, 0, 0.08);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: 'Monaco', 'Menlo', monospace;
+  font-size: 12px;
+}
+
+.chat-widget-message.user .chat-widget-message-content code {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.chat-widget-message-content pre {
+  background: #1a1c21;
+  color: #f5f7fa;
+  padding: 12px;
+  border-radius: 6px;
+  overflow-x: auto;
+  margin: 8px 0;
+}
+
+.chat-widget-message-content pre code {
+  background: transparent;
+  padding: 0;
+  font-size: 11px;
+}
+
+.chat-widget-message-content blockquote {
+  border-left: 3px solid #0077cc;
+  margin: 8px 0;
+  padding-left: 12px;
+  color: #69707d;
+  font-style: italic;
+}
+
+.chat-widget-message-content strong {
+  font-weight: 600;
+}
+
+.chat-widget-message-content em {
+  font-style: italic;
+}
+
+.chat-widget-message-content a {
+  color: #0077cc;
+  text-decoration: underline;
+}
+
+.chat-widget-message.user .chat-widget-message-content a {
+  color: #e6f0f8;
+}
+
+.chat-widget-message-content table {
+  border-collapse: collapse;
+  margin: 8px 0;
+  font-size: 12px;
+  width: 100%;
+}
+
+.chat-widget-message-content th,
+.chat-widget-message-content td {
+  border: 1px solid #d3dae6;
+  padding: 6px 10px;
+  text-align: left;
+}
+
+.chat-widget-message-content th {
+  background: #f5f7fa;
+  font-weight: 600;
+}
+
+.chat-widget-message.user .chat-widget-message-content th,
+.chat-widget-message.user .chat-widget-message-content td {
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.chat-widget-message.user .chat-widget-message-content th {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* =============================================================================
+   Loading Progress Steps Animation
+   ============================================================================= */
+
+.chat-widget-loading {
+  padding: 16px;
+  background: linear-gradient(135deg, #f5f7fa 0%, #e6f0f8 100%);
+  border-radius: 12px;
+  border-bottom-left-radius: 4px;
+  align-self: flex-start;
+  max-width: 90%;
+}
+
+.loading-progress-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.loading-step {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  transition: all 0.3s ease;
+  opacity: 0.4;
+}
+
+.loading-step.active {
+  opacity: 1;
+  background: rgba(0, 119, 204, 0.1);
+}
+
+.loading-step.completed {
+  opacity: 0.7;
+}
+
+.loading-step-icon {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #d3dae6;
+  color: #69707d;
+  transition: all 0.3s ease;
+}
+
+.loading-step.active .loading-step-icon {
+  background: #0077cc;
+  color: white;
+  animation: pulse 1.5s infinite;
+}
+
+.loading-step.completed .loading-step-icon {
+  background: #00726b;
+  color: white;
+}
+
+.loading-step-text {
+  font-size: 12px;
+  color: #69707d;
+  font-weight: 500;
+  transition: all 0.3s ease;
+}
+
+.loading-step.active .loading-step-text {
+  color: #0077cc;
+  font-weight: 600;
+}
+
+.loading-step.completed .loading-step-text {
+  color: #00726b;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(0, 119, 204, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(0, 119, 204, 0);
+  }
+}
+
+/* =============================================================================
+   Streaming Progress UI
+   ============================================================================= */
+
+.stream-progress {
+  background: linear-gradient(135deg, #f5f7fa 0%, #e6f0f8 100%);
+  border-left: 3px solid #0077cc;
+}
+
+.stream-tool-calls {
+  margin-left: 8px;
+  padding-left: 8px;
+  border-left: 2px solid #d3dae6;
+}
+
+.stream-tool-calls .loading-step {
+  padding: 4px 8px;
+}
+
+.stream-tool-calls code {
+  background: rgba(0, 119, 204, 0.1);
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-family: 'Monaco', 'Menlo', monospace;
+  font-size: 11px;
+  color: #0077cc;
+}
+
+.stream-message-preview {
+  margin-top: 12px;
+  padding: 12px;
+  background: white;
+  border-radius: 8px;
+  border: 1px solid #d3dae6;
+  font-size: 13px;
+  line-height: 1.5;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.stream-message-preview p {
+  margin: 0 0 8px 0;
+}
+
+.stream-message-preview p:last-child {
+  margin-bottom: 0;
+}
+
+/* Blinking cursor effect for streaming text */
+.stream-message-preview::after {
+  content: '|';
+  animation: blink 1s step-end infinite;
+  color: #0077cc;
+  font-weight: bold;
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}

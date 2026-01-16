@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { X, Send, MessageCircle, FileText, Loader, Lock, MapPin } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import { X, Send, MessageCircle, FileText, Loader, Lock, MapPin, Brain, Database, Bot, Check, Cog } from 'lucide-react';
 
 const API_BASE = process.env.REACT_APP_API_URL || '';
 
@@ -16,23 +17,35 @@ function DocumentModal({ document, onClose }) {
   const [llmEnabled, setLlmEnabled] = useState(false);
   const [ragEnabled, setRagEnabled] = useState(false);
   const [chatEnabled, setChatEnabled] = useState(false);
+  const [agentEnabled, setAgentEnabled] = useState(false);
   const [showLlmTooltip, setShowLlmTooltip] = useState(false);
+  const [conversationId, setConversationId] = useState(null);
+
+  // Streaming state
+  const [streamingMessage, setStreamingMessage] = useState('');
+  const [streamProgress, setStreamProgress] = useState({
+    phase: null,
+    reasoning: '',
+    toolCalls: [],
+    currentTool: null,
+  });
 
   const messagesEndRef = useRef(null);
+  const abortControllerRef = useRef(null);
 
   // Handle "View on Map" click
   const handleViewOnMap = (incidentIds) => {
     if (incidentIds && incidentIds.length > 0) {
       const ids = incidentIds.join(',');
       navigate(`/map?highlight=${encodeURIComponent(ids)}`);
-      onClose(); // Close modal
+      onClose();
     }
   };
 
   // Extract incident IDs from text
   const extractIncidentIds = (text) => {
     const matches = text.match(/INC-\d{4}-\d+/g) || [];
-    return [...new Set(matches)]; // Remove duplicates
+    return [...new Set(matches)];
   };
 
   // Fetch feature flags on mount
@@ -43,57 +56,266 @@ function DocumentModal({ document, onClose }) {
         setLlmEnabled(resp.data.llm_enabled);
         setRagEnabled(resp.data.rag_enabled);
         setChatEnabled(resp.data.chat_enabled);
+        setAgentEnabled(resp.data.agent_enabled);
       } catch (err) {
         console.error('Failed to fetch features:', err);
         setLlmEnabled(false);
         setRagEnabled(false);
         setChatEnabled(false);
+        setAgentEnabled(false);
       }
     };
     fetchFeatures();
   }, []);
 
   useEffect(() => {
-    // Reset chat when document changes
     setChatMessages([]);
     setSummary(null);
+    setConversationId(null);
   }, [document.id]);
 
   useEffect(() => {
-    // Auto-scroll chat
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [chatMessages]);
+  }, [chatMessages, streamingMessage, streamProgress]);
+
+  // Parse SSE line into event type and data
+  const parseSSELine = (line) => {
+    if (line.startsWith('event:')) {
+      return { type: 'event', value: line.slice(6).trim() };
+    }
+    if (line.startsWith('data:')) {
+      try {
+        return { type: 'data', value: JSON.parse(line.slice(5).trim()) };
+      } catch {
+        return { type: 'data', value: line.slice(5).trim() };
+      }
+    }
+    return null;
+  };
+
+  // Handle streaming chat
+  const handleStreamingChat = async (userMessage) => {
+    abortControllerRef.current = new AbortController();
+
+    setStreamProgress({
+      phase: 'reasoning',
+      reasoning: '',
+      toolCalls: [],
+      currentTool: null,
+    });
+    setStreamingMessage('');
+
+    try {
+      const response = await fetch(`${API_BASE}/chat/document/stream`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          document_id: document.id || document.incident_id,
+          message: userMessage,
+          chat_history: chatMessages,
+          conversation_id: conversationId,
+        }),
+        signal: abortControllerRef.current.signal,
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let currentEventType = null;
+      let finalMessage = '';
+      let collectedToolCalls = [];
+      let newConversationId = null;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          const parsed = parseSSELine(line);
+          if (!parsed) continue;
+
+          if (parsed.type === 'event') {
+            currentEventType = parsed.value;
+          } else if (parsed.type === 'data' && currentEventType) {
+            const data = parsed.value;
+
+            switch (currentEventType) {
+              case 'conversation_id_set':
+              case 'conversation_created':
+                if (data.conversation_id) {
+                  newConversationId = data.conversation_id;
+                }
+                break;
+
+              case 'reasoning':
+                setStreamProgress(prev => ({
+                  ...prev,
+                  phase: 'reasoning',
+                  reasoning: data.reasoning || prev.reasoning,
+                }));
+                break;
+
+              case 'tool_call':
+                const toolCall = {
+                  tool: data.tool_id,
+                  parameters: data.params || {},
+                  status: 'running',
+                  toolCallId: data.tool_call_id,
+                };
+                collectedToolCalls.push(toolCall);
+                setStreamProgress(prev => ({
+                  ...prev,
+                  phase: 'tool_call',
+                  currentTool: data.tool_id,
+                  toolCalls: [...collectedToolCalls],
+                }));
+                break;
+
+              case 'tool_progress':
+                setStreamProgress(prev => ({
+                  ...prev,
+                  phase: 'tool_progress',
+                }));
+                break;
+
+              case 'tool_result':
+                collectedToolCalls = collectedToolCalls.map(tc =>
+                  tc.toolCallId === data.tool_call_id
+                    ? { ...tc, status: 'completed', result: data.results }
+                    : tc
+                );
+                setStreamProgress(prev => ({
+                  ...prev,
+                  toolCalls: [...collectedToolCalls],
+                  currentTool: null,
+                }));
+                break;
+
+              case 'thinking_complete':
+                setStreamProgress(prev => ({
+                  ...prev,
+                  phase: 'generating',
+                }));
+                break;
+
+              case 'message_chunk':
+                if (data.text_chunk) {
+                  finalMessage += data.text_chunk;
+                  setStreamingMessage(finalMessage);
+                }
+                break;
+
+              case 'message_complete':
+                if (data.message_content) {
+                  finalMessage = data.message_content;
+                  setStreamingMessage(finalMessage);
+                }
+                break;
+
+              case 'round_complete':
+                break;
+
+              case 'error':
+                throw new Error(data.error || 'Stream error');
+
+              default:
+                break;
+            }
+            currentEventType = null;
+          }
+        }
+      }
+
+      if (newConversationId) {
+        setConversationId(newConversationId);
+      }
+
+      setChatMessages(prev => [
+        ...prev,
+        {
+          role: 'assistant',
+          content: finalMessage || 'No response received.',
+          toolCalls: collectedToolCalls.filter(tc => tc.status === 'completed'),
+        },
+      ]);
+
+    } catch (err) {
+      if (err.name === 'AbortError') {
+        console.log('Stream aborted');
+      } else {
+        console.error('Streaming failed:', err);
+        setChatMessages(prev => [
+          ...prev,
+          {
+            role: 'assistant',
+            content: 'Sorry, I encountered an error. Please try again.',
+          },
+        ]);
+      }
+    } finally {
+      setStreamingMessage('');
+      setStreamProgress({
+        phase: null,
+        reasoning: '',
+        toolCalls: [],
+        currentTool: null,
+      });
+      setChatLoading(false);
+      abortControllerRef.current = null;
+    }
+  };
 
   const handleSendMessage = async () => {
     if (!inputMessage.trim() || chatLoading) return;
 
     const userMessage = inputMessage.trim();
     setInputMessage('');
-    setChatMessages((prev) => [...prev, { role: 'user', content: userMessage }]);
+    setChatMessages(prev => [...prev, { role: 'user', content: userMessage }]);
     setChatLoading(true);
 
-    try {
-      const resp = await axios.post(`${API_BASE}/chat/document`, {
-        document_id: document.id || document.incident_id,
-        message: userMessage,
-        chat_history: chatMessages,
-      });
+    // Use streaming if agent is enabled
+    if (agentEnabled) {
+      await handleStreamingChat(userMessage);
+    } else {
+      // Fallback to non-streaming
+      try {
+        const resp = await axios.post(`${API_BASE}/chat/document`, {
+          document_id: document.id || document.incident_id,
+          message: userMessage,
+          chat_history: chatMessages,
+          conversation_id: conversationId,
+        });
 
-      setChatMessages((prev) => [
-        ...prev,
-        { role: 'assistant', content: resp.data.response },
-      ]);
-    } catch (err) {
-      console.error('Chat failed:', err);
-      setChatMessages((prev) => [
-        ...prev,
-        {
-          role: 'assistant',
-          content: 'Sorry, I encountered an error. Please try again.',
-        },
-      ]);
-    } finally {
-      setChatLoading(false);
+        if (resp.data.conversation_id) {
+          setConversationId(resp.data.conversation_id);
+        }
+
+        setChatMessages(prev => [
+          ...prev,
+          { role: 'assistant', content: resp.data.response },
+        ]);
+      } catch (err) {
+        console.error('Chat failed:', err);
+        setChatMessages(prev => [
+          ...prev,
+          {
+            role: 'assistant',
+            content: 'Sorry, I encountered an error. Please try again.',
+          },
+        ]);
+      } finally {
+        setChatLoading(false);
+      }
     }
   };
 
@@ -142,6 +364,62 @@ function DocumentModal({ document, onClose }) {
       minimumFractionDigits: 0,
       maximumFractionDigits: 0,
     }).format(value);
+  };
+
+  // Render streaming progress
+  const renderStreamProgress = () => {
+    const { phase, reasoning, toolCalls } = streamProgress;
+
+    return (
+      <div className="chat-widget-loading stream-progress" style={{ margin: '12px 0' }}>
+        {/* Reasoning phase */}
+        <div className={`loading-step ${phase === 'reasoning' ? 'active' : ''} ${['tool_call', 'tool_progress', 'generating'].includes(phase) ? 'completed' : ''}`}>
+          <div className="loading-step-icon">
+            {['tool_call', 'tool_progress', 'generating'].includes(phase) ? <Check size={14} /> : <Brain size={14} />}
+          </div>
+          <span className="loading-step-text">
+            {phase === 'reasoning' ? (reasoning || 'Analyzing question...') : 'Question analyzed'}
+          </span>
+        </div>
+
+        {/* Tool calls */}
+        {toolCalls.length > 0 && (
+          <div className="stream-tool-calls">
+            {toolCalls.map((tc, idx) => (
+              <div
+                key={idx}
+                className={`loading-step ${tc.status === 'running' ? 'active' : ''} ${tc.status === 'completed' ? 'completed' : ''}`}
+              >
+                <div className="loading-step-icon">
+                  {tc.status === 'completed' ? <Check size={14} /> : <Cog size={14} />}
+                </div>
+                <span className="loading-step-text">
+                  <code>{tc.tool}</code>
+                  {tc.status === 'running' && ' (executing...)'}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Generating phase */}
+        {phase === 'generating' && (
+          <div className="loading-step active">
+            <div className="loading-step-icon">
+              <Bot size={14} />
+            </div>
+            <span className="loading-step-text">Generating response...</span>
+          </div>
+        )}
+
+        {/* Streaming message preview */}
+        {streamingMessage && (
+          <div className="stream-message-preview">
+            <ReactMarkdown>{streamingMessage}</ReactMarkdown>
+          </div>
+        )}
+      </div>
+    );
   };
 
   return (
@@ -253,11 +531,11 @@ function DocumentModal({ document, onClose }) {
                       padding: '16px',
                       background: '#f0f7ff',
                       borderRadius: '6px',
-                      whiteSpace: 'pre-wrap',
                       lineHeight: '1.6',
                     }}
+                    className="chat-widget-message-content"
                   >
-                    {summary}
+                    <ReactMarkdown>{summary}</ReactMarkdown>
                   </div>
                 )}
               </div>
@@ -371,7 +649,7 @@ function DocumentModal({ document, onClose }) {
         {activeTab === 'chat' && (
           <div className="chat-container">
             <div className="chat-messages">
-              {chatMessages.length === 0 && (
+              {chatMessages.length === 0 && !chatLoading && (
                 <div
                   style={{
                     textAlign: 'center',
@@ -381,7 +659,9 @@ function DocumentModal({ document, onClose }) {
                 >
                   <MessageCircle size={40} strokeWidth={1} />
                   <p style={{ marginTop: '12px' }}>
-                    Ask questions about this incident
+                    {agentEnabled
+                      ? 'Ask questions about this incident (streaming enabled)'
+                      : 'Ask questions about this incident'}
                   </p>
                   <div
                     style={{
@@ -395,14 +675,12 @@ function DocumentModal({ document, onClose }) {
                     {[
                       'What happened?',
                       'Was anyone arrested?',
+                      'Are there any related incidents?',
                       'What evidence was collected?',
-                      'Were there any witnesses?',
                     ].map((suggestion) => (
                       <button
                         key={suggestion}
-                        onClick={() => {
-                          setInputMessage(suggestion);
-                        }}
+                        onClick={() => setInputMessage(suggestion)}
                         style={{
                           padding: '8px 12px',
                           background: '#f5f7fa',
@@ -423,7 +701,24 @@ function DocumentModal({ document, onClose }) {
                 const incidentIds = msg.role === 'assistant' ? extractIncidentIds(msg.content) : [];
                 return (
                   <div key={idx} className={`chat-message ${msg.role}`}>
-                    <div>{msg.content}</div>
+                    {/* Tool calls */}
+                    {msg.toolCalls && msg.toolCalls.length > 0 && (
+                      <div className="chat-widget-tool-calls" style={{ marginBottom: '8px' }}>
+                        {msg.toolCalls.map((tc, tcIdx) => (
+                          <div key={tcIdx} className="tool-call-badge">
+                            <Check size={12} />
+                            <span>{tc.tool}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <div className="chat-widget-message-content">
+                      {msg.role === 'assistant' ? (
+                        <ReactMarkdown>{msg.content}</ReactMarkdown>
+                      ) : (
+                        msg.content
+                      )}
+                    </div>
                     {incidentIds.length > 0 && (
                       <div style={{
                         marginTop: '10px',
@@ -462,11 +757,14 @@ function DocumentModal({ document, onClose }) {
                 );
               })}
 
+              {/* Loading/Streaming progress */}
               {chatLoading && (
-                <div className="chat-message assistant">
-                  <Loader size={16} className="spinning" style={{ marginRight: 8 }} />
-                  Thinking...
-                </div>
+                agentEnabled ? renderStreamProgress() : (
+                  <div className="chat-message assistant">
+                    <Loader size={16} className="spinning" style={{ marginRight: 8 }} />
+                    Thinking...
+                  </div>
+                )
               )}
 
               <div ref={messagesEndRef} />
