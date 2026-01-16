@@ -274,7 +274,9 @@ async def get_stats():
 async def get_features():
     """Get feature flags - all AI features disabled in skeleton version."""
     return {
+        "hybrid_enabled": False,
         "llm_enabled": False,
+        "rag_enabled": False,
         "chat_enabled": False,
         "agent_enabled": False,
         "agent_id": None,

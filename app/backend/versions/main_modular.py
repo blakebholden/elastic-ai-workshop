@@ -159,7 +159,9 @@ async def get_features():
     settings = get_settings()
 
     return {
+        "hybrid_enabled": settings.hybrid_enabled,
         "llm_enabled": settings.llm_enabled,
+        "rag_enabled": settings.rag_enabled,
         "chat_enabled": settings.chat_enabled,
         "agent_enabled": settings.agent_enabled,
         "agent_id": settings.agent_id if settings.agent_enabled else None,
