@@ -567,14 +567,22 @@ async def agent_chat(request: AgentChatRequest):
 
     try:
         async with httpx.AsyncClient(timeout=60.0) as client:
+            # Build request body
+            request_body = {
+                "input": request.message,
+                "agent_id": settings.agent_id,
+            }
+            if request.conversation_id:
+                request_body["conversation_id"] = request.conversation_id
+
             response = await client.post(
-                f"{settings.kibana_url}/api/ai/agents/{settings.agent_id}/chat",
+                f"{settings.kibana_url}/api/agent_builder/converse",
                 headers={
                     "kbn-xsrf": "true",
                     "Authorization": f"ApiKey {settings.elasticsearch_api_key}",
                     "Content-Type": "application/json",
                 },
-                json={"message": request.message, "conversationId": request.conversation_id}
+                json=request_body
             )
 
             if response.status_code != 200:
@@ -587,16 +595,25 @@ async def agent_chat(request: AgentChatRequest):
     except httpx.RequestError as e:
         raise HTTPException(status_code=503, detail=f"Could not connect to Agent Builder: {str(e)}")
 
-    tool_calls = [
-        ToolCall(tool=tc.get("tool", "unknown"), parameters=tc.get("parameters", {}), result=tc.get("result"))
-        for tc in result.get("toolCalls", [])
-    ]
+    # Parse tool calls from steps
+    tool_calls = []
+    for step in result.get("steps", []):
+        if step.get("type") == "tool_call":
+            tool_calls.append(ToolCall(
+                tool=step.get("tool_id", "unknown"),
+                parameters=step.get("parameters", {}),
+                result=step.get("result")
+            ))
+
+    # Extract response message
+    response_obj = result.get("response", {})
+    response_message = response_obj.get("message", "") if isinstance(response_obj, dict) else str(response_obj)
 
     return AgentChatResponse(
-        response=result.get("response", "No response from agent."),
+        response=response_message or "No response from agent.",
         tool_calls=tool_calls,
-        sources=result.get("sources", []),
-        conversation_id=result.get("conversationId")
+        sources=[],
+        conversation_id=result.get("conversation_id")
     )
 
 
