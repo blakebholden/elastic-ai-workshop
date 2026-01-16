@@ -36,6 +36,19 @@ class Settings(BaseSettings):
     agent_id: str = os.getenv("AGENT_ID", "police-investigation-assistant")
     kibana_url: str = os.getenv("KIBANA_URL", "")
 
+    # Metrics / Observability
+    metrics_enabled: bool = os.getenv("METRICS_ENABLED", "true").lower() == "true"
+    metrics_index: str = os.getenv("METRICS_INDEX", "app-metrics")
+
+    # Remote metrics (instructor's central cluster for class-wide dashboard)
+    remote_metrics_enabled: bool = os.getenv("REMOTE_METRICS_ENABLED", "false").lower() == "true"
+    remote_metrics_url: str = os.getenv("REMOTE_METRICS_URL", "")
+    remote_metrics_api_key: str = os.getenv("REMOTE_METRICS_API_KEY", "")
+    remote_metrics_index: str = os.getenv("REMOTE_METRICS_INDEX", "workshop-metrics")
+
+    # Session identifier for class tracking
+    session_id: str = os.getenv("SESSION_ID", "")
+
     class Config:
         env_file = ".env"
         extra = "ignore"

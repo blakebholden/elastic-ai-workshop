@@ -5,6 +5,7 @@ A search API demonstrating keyword, semantic, vector, and hybrid search
 capabilities with Elasticsearch and LLM-powered chat.
 """
 import logging
+import time
 from contextlib import asynccontextmanager
 from typing import Optional
 
@@ -13,6 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from elasticsearch import AsyncElasticsearch, NotFoundError
 
 from config import get_settings
+from metrics import log_llm_metrics, log_agent_metrics, log_search_metrics, create_metrics_index
 from models import (
     SearchRequest,
     FilteredSearchRequest,
@@ -53,6 +55,10 @@ async def lifespan(app: FastAPI):
 
     es_client = AsyncElasticsearch(**es_config)
     logger.info(f"Connected to Elasticsearch at {settings.elasticsearch_url}")
+
+    # Create metrics index if enabled
+    if settings.metrics_enabled:
+        await create_metrics_index(es_client)
 
     yield
 
@@ -609,6 +615,7 @@ INSTRUCTIONS:
 RESPONSE:"""
 
     # Step 3: Call the LLM
+    start_time = time.time()
     try:
         llm_resp = await es_client.inference.inference(
             model_id=settings.llm_inference_id,
@@ -617,9 +624,33 @@ RESPONSE:"""
         )
 
         response_text = llm_resp.get("completion", [{}])[0].get("result", "Unable to generate response")
+        latency_ms = (time.time() - start_time) * 1000
+
+        # Log metrics
+        await log_llm_metrics(
+            es_client=es_client,
+            endpoint="/chat",
+            prompt=prompt,
+            response=response_text,
+            latency_ms=latency_ms,
+            success=True,
+        )
 
     except Exception as e:
+        latency_ms = (time.time() - start_time) * 1000
         logger.error(f"LLM generation failed: {e}")
+
+        # Log failed attempt
+        await log_llm_metrics(
+            es_client=es_client,
+            endpoint="/chat",
+            prompt=prompt,
+            response="",
+            latency_ms=latency_ms,
+            success=False,
+            error=str(e),
+        )
+
         return GeneralChatResponse(
             response=f"I found {len(retrieved_docs)} relevant incidents but couldn't generate a summary. Error: {str(e)}",
             sources=sources,
@@ -747,6 +778,7 @@ Based on this incident report:
 
 User question: {request.message}"""
 
+        start_time = time.time()
         try:
             inference_resp = await es_client.inference.inference(
                 model_id=settings.llm_inference_id,
@@ -754,8 +786,33 @@ User question: {request.message}"""
                 input=full_prompt,
             )
             response_text = inference_resp.get("completion", [{}])[0].get("result", "Unable to generate response.")
+            latency_ms = (time.time() - start_time) * 1000
+
+            # Log metrics
+            await log_llm_metrics(
+                es_client=es_client,
+                endpoint="/chat/document",
+                prompt=full_prompt,
+                response=response_text,
+                latency_ms=latency_ms,
+                success=True,
+            )
+
         except Exception as e:
+            latency_ms = (time.time() - start_time) * 1000
             logger.warning(f"Inference API call failed: {e}, trying direct LLM")
+
+            # Log failed attempt
+            await log_llm_metrics(
+                es_client=es_client,
+                endpoint="/chat/document",
+                prompt=full_prompt,
+                response="",
+                latency_ms=latency_ms,
+                success=False,
+                error=str(e),
+            )
+
             # Fallback to direct LLM call if configured
             if settings.llm_api_key and settings.llm_api_base:
                 response_text = await _call_llm_direct(messages, settings)
@@ -804,6 +861,7 @@ Narrative:
 
 Provide a brief summary:"""
 
+    start_time = time.time()
     try:
         inference_resp = await es_client.inference.inference(
             model_id=settings.llm_inference_id,
@@ -811,8 +869,33 @@ Provide a brief summary:"""
             input=prompt,
         )
         summary = inference_resp.get("completion", [{}])[0].get("result", "Unable to generate summary.")
+        latency_ms = (time.time() - start_time) * 1000
+
+        # Log metrics
+        await log_llm_metrics(
+            es_client=es_client,
+            endpoint="/rag/summarize",
+            prompt=prompt,
+            response=summary,
+            latency_ms=latency_ms,
+            success=True,
+        )
+
     except Exception as e:
+        latency_ms = (time.time() - start_time) * 1000
         logger.warning(f"Summarize failed: {e}")
+
+        # Log failed attempt
+        await log_llm_metrics(
+            es_client=es_client,
+            endpoint="/rag/summarize",
+            prompt=prompt,
+            response="",
+            latency_ms=latency_ms,
+            success=False,
+            error=str(e),
+        )
+
         # Generate a simple extractive summary as fallback
         narrative = document.get("narrative", "")
         summary = f"• {document.get('incident_type', 'Incident')} at {document.get('address_block', 'unknown location')}\n"
@@ -854,6 +937,7 @@ async def agent_chat(request: AgentChatRequest):
 
     # Call Kibana Agent Builder API
     # API docs: https://www.elastic.co/docs/explore-analyze/ai-features/agent-builder/kibana-api
+    start_time = time.time()
     try:
         async with httpx.AsyncClient(timeout=60.0) as client:
             response = await client.post(
@@ -870,7 +954,19 @@ async def agent_chat(request: AgentChatRequest):
             )
 
             if response.status_code != 200:
+                latency_ms = (time.time() - start_time) * 1000
                 logger.error(f"Agent API error: {response.status_code} - {response.text}")
+
+                # Log failed attempt
+                await log_agent_metrics(
+                    es_client=es_client,
+                    message=request.message,
+                    response="",
+                    latency_ms=latency_ms,
+                    success=False,
+                    error=f"HTTP {response.status_code}",
+                )
+
                 raise HTTPException(
                     status_code=response.status_code,
                     detail=f"Agent API error: {response.text}"
@@ -879,13 +975,35 @@ async def agent_chat(request: AgentChatRequest):
             result = response.json()
 
     except httpx.TimeoutException:
+        latency_ms = (time.time() - start_time) * 1000
         logger.error("Agent API request timed out")
+
+        await log_agent_metrics(
+            es_client=es_client,
+            message=request.message,
+            response="",
+            latency_ms=latency_ms,
+            success=False,
+            error="Timeout",
+        )
+
         raise HTTPException(
             status_code=504,
             detail="Agent request timed out. The query may be too complex."
         )
     except httpx.RequestError as e:
+        latency_ms = (time.time() - start_time) * 1000
         logger.error(f"Agent API connection error: {e}")
+
+        await log_agent_metrics(
+            es_client=es_client,
+            message=request.message,
+            response="",
+            latency_ms=latency_ms,
+            success=False,
+            error=str(e),
+        )
+
         raise HTTPException(
             status_code=503,
             detail=f"Could not connect to Agent Builder API: {str(e)}"
@@ -906,6 +1024,17 @@ async def agent_chat(request: AgentChatRequest):
         response_text = response_data.get("message", "No response from agent.")
     else:
         response_text = str(response_data) if response_data else "No response from agent."
+
+    # Log successful agent call
+    latency_ms = (time.time() - start_time) * 1000
+    await log_agent_metrics(
+        es_client=es_client,
+        message=request.message,
+        response=response_text,
+        latency_ms=latency_ms,
+        tool_calls=len(tool_calls),
+        success=True,
+    )
 
     # Extract incident IDs from response text for "View on Map" feature
     import re
