@@ -442,6 +442,47 @@ async def similar_documents(doc_id: str, size: int = Query(default=5, ge=1, le=2
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/documents/map", tags=["Documents"])
+async def get_documents_for_map(
+    incident_type: Optional[str] = Query(default=None),
+    district: Optional[str] = Query(default=None),
+    size: int = Query(default=500, ge=1, le=1000)
+):
+    """Get documents with location data for map display."""
+    settings = get_settings()
+
+    filter_clauses = [{"exists": {"field": "location"}}]
+
+    if incident_type:
+        filter_clauses.append({"term": {"incident_type": incident_type}})
+    if district:
+        filter_clauses.append({"term": {"district": district}})
+
+    query = {
+        "query": {
+            "bool": {
+                "filter": filter_clauses
+            }
+        },
+        "size": size,
+        "_source": [
+            "incident_id", "incident_type", "incident_subtype",
+            "incident_datetime", "district", "neighborhood",
+            "address_block", "location", "severity", "resolution"
+        ]
+    }
+
+    try:
+        resp = await es_client.search(index=settings.elasticsearch_index, body=query)
+        return {
+            "total": resp["hits"]["total"]["value"],
+            "incidents": [hit["_source"] for hit in resp["hits"]["hits"]]
+        }
+    except Exception as e:
+        logger.error(f"Map documents query failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # =============================================================================
 # Chat / RAG Endpoints
 # =============================================================================
