@@ -649,11 +649,15 @@ User question: {request.message}"""
         )
         response_text = inference_resp.get("completion", [{}])[0].get("result", "Unable to generate response.")
     except Exception as e:
-        logger.error(f"Chat with document LLM call failed: {e}")
-        raise HTTPException(
-            status_code=503,
-            detail="LLM service unavailable. Please try again.",
-        )
+        logger.warning(f"Chat with document LLM call failed: {e}, using fallback")
+        # Generate a simple fallback response based on document content
+        response_text = f"I found information about this {document.get('incident_type', 'incident')}:\n\n"
+        response_text += f"• Location: {document.get('address_block', 'Unknown')}, {document.get('neighborhood', '')} ({document.get('district', '')} District)\n"
+        response_text += f"• Date/Time: {document.get('incident_datetime', 'Unknown')}\n"
+        response_text += f"• Resolution: {document.get('resolution', 'Unknown')}\n"
+        if document.get('estimated_loss', 0) > 0:
+            response_text += f"• Estimated Loss: ${document.get('estimated_loss', 0):,.2f}\n"
+        response_text += f"\n(Note: AI summary unavailable - showing key facts from the report)"
 
     return ChatResponse(response=response_text, document_id=request.document_id)
 
