@@ -90,8 +90,8 @@ async def health_check():
     settings = get_settings()
 
     try:
-        # Check ES cluster health
-        cluster_health = await es_client.cluster.health()
+        # Check ES connection with a simple info call (works in Serverless)
+        es_info = await es_client.info()
 
         # Check index exists and get doc count
         index_exists = await es_client.indices.exists(index=settings.elasticsearch_index)
@@ -103,8 +103,8 @@ async def health_check():
         return HealthResponse(
             status="healthy",
             elasticsearch={
-                "status": cluster_health["status"],
-                "cluster_name": cluster_health["cluster_name"],
+                "status": "available",
+                "cluster_name": es_info.get("cluster_name", "serverless"),
             },
             index={
                 "name": settings.elasticsearch_index,
@@ -369,6 +369,26 @@ async def filtered_search(request: FilteredSearchRequest):
 # =============================================================================
 # Document Endpoints
 # =============================================================================
+
+@app.get("/documents/recent", response_model=SearchResponse, tags=["Documents"])
+async def recent_documents(size: int = Query(default=20, ge=1, le=100)):
+    """Get recent incidents sorted by date."""
+    settings = get_settings()
+
+    query = {
+        "query": {"match_all": {}},
+        "sort": [{"incident_datetime": {"order": "desc"}}],
+        "size": size,
+        "_source": {"excludes": ["narrative_semantic"]},
+    }
+
+    try:
+        resp = await es_client.search(index=settings.elasticsearch_index, body=query)
+        return _format_search_response(resp, "recent")
+    except Exception as e:
+        logger.error(f"Recent documents query failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.get("/document/{doc_id}", tags=["Documents"])
 async def get_document(doc_id: str):

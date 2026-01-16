@@ -97,7 +97,8 @@ async def health_check():
     settings = get_settings()
 
     try:
-        cluster_health = await es_client.cluster.health()
+        # Check ES connection with a simple info call (works in Serverless)
+        es_info = await es_client.info()
         index_exists = await es_client.indices.exists(index=settings.elasticsearch_index)
         doc_count = 0
         if index_exists:
@@ -107,8 +108,8 @@ async def health_check():
         return HealthResponse(
             status="healthy",
             elasticsearch={
-                "status": cluster_health["status"],
-                "cluster_name": cluster_health["cluster_name"],
+                "status": "available",
+                "cluster_name": es_info.get("cluster_name", "serverless"),
             },
             index={
                 "name": settings.elasticsearch_index,
