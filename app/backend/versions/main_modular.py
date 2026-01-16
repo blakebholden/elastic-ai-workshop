@@ -552,6 +552,71 @@ RESPONSE:"""
     return GeneralChatResponse(response=response_text, sources=sources, source_count=len(sources))
 
 
+@app.post("/chat/document", response_model=ChatResponse, tags=["Chat"])
+async def chat_with_document(request: ChatRequest):
+    """
+    Chat about a specific document using RAG.
+
+    Retrieves the document content and uses it as context for the LLM
+    to answer questions about the incident.
+    """
+    settings = get_settings()
+
+    # Get the document
+    try:
+        doc_resp = await es_client.get(
+            index=settings.elasticsearch_index,
+            id=request.document_id,
+            source_excludes=["narrative_semantic"],
+        )
+        document = doc_resp["_source"]
+    except NotFoundError:
+        raise HTTPException(
+            status_code=404, detail=f"Document {request.document_id} not found"
+        )
+
+    # Build context from document
+    context = f"""Police Incident Report:
+- Incident ID: {document.get('incident_id', 'Unknown')}
+- Type: {document.get('incident_type', 'Unknown')} - {document.get('incident_subtype', '')}
+- Date/Time: {document.get('incident_datetime', 'Unknown')}
+- Location: {document.get('address_block', 'Unknown')}, {document.get('neighborhood', '')} ({document.get('district', '')} District)
+- Severity: {document.get('severity', 'Unknown')}
+- Resolution: {document.get('resolution', 'Unknown')}
+- Arrest Made: {document.get('arrest_made', 'Unknown')}
+- Injuries Reported: {document.get('injuries_reported', 'Unknown')}
+- Weapon Involved: {document.get('weapon_involved', 'None')}
+- Estimated Loss: ${document.get('estimated_loss', 0):,.2f}
+
+Narrative:
+{document.get('narrative', 'No narrative available.')}
+"""
+
+    # Build chat prompt
+    user_message = f"""Based on this incident report:
+
+{context}
+
+User question: {request.message}"""
+
+    # Call LLM via Elasticsearch Inference API
+    try:
+        inference_resp = await es_client.inference.inference(
+            inference_id=settings.llm_inference_id,
+            task_type="completion",
+            input=user_message,
+        )
+        response_text = inference_resp.get("completion", [{}])[0].get("result", "Unable to generate response.")
+    except Exception as e:
+        logger.error(f"Chat with document LLM call failed: {e}")
+        raise HTTPException(
+            status_code=503,
+            detail="LLM service unavailable. Please try again.",
+        )
+
+    return ChatResponse(response=response_text, document_id=request.document_id)
+
+
 @app.post("/agent/chat", response_model=AgentChatResponse, tags=["Agent"])
 async def agent_chat(request: AgentChatRequest):
     """Chat with Agent Builder."""
