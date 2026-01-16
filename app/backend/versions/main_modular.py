@@ -507,10 +507,18 @@ async def general_chat(request: GeneralChatRequest):
         narrative = doc.get('narrative', '')[:400]
         context_text += f"   Summary: {narrative}\n"
 
+    # Include chat history for context
+    history_text = ""
+    if request.chat_history:
+        history_text = "\nPrevious conversation:\n"
+        for msg in request.chat_history[-4:]:  # Last 4 messages
+            role = "User" if msg.get("role") == "user" else "Assistant"
+            history_text += f"{role}: {msg.get('content', '')}\n"
+
     prompt = f"""You are a police department investigation assistant.
 
 Based on the following incident reports, answer the user's question.
-
+{history_text}
 INCIDENT REPORTS:
 {context_text}
 

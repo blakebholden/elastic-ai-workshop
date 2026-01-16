@@ -680,9 +680,15 @@ If the information isn't in the report, say so clearly. Never speculate about on
 
     messages = [{"role": "system", "content": system_prompt}]
 
-    # Add chat history
-    for msg in request.chat_history[-6:]:  # Keep last 6 messages for context
-        messages.append({"role": msg.get("role", "user"), "content": msg.get("content", "")})
+    # Build chat history text for the prompt
+    history_text = ""
+    if request.chat_history:
+        history_text = "\nPrevious conversation:\n"
+        for msg in request.chat_history[-6:]:  # Keep last 6 messages for context
+            role = "User" if msg.get("role") == "user" else "Assistant"
+            history_text += f"{role}: {msg.get('content', '')}\n"
+            # Also add to messages array for direct LLM fallback
+            messages.append({"role": msg.get("role", "user"), "content": msg.get("content", "")})
 
     # Build message with document context for Agent Builder
     user_message = f"""I'm looking at this specific incident report:
@@ -731,11 +737,21 @@ Please answer based on this incident. If I ask about related incidents, use your
     # Fallback to Elasticsearch Inference API
     if response_text is None:
         messages.append({"role": "user", "content": user_message})
+
+        # Build full prompt for Inference API (includes system prompt + history + context)
+        full_prompt = f"""{system_prompt}
+{history_text}
+Based on this incident report:
+
+{context}
+
+User question: {request.message}"""
+
         try:
             inference_resp = await es_client.inference.inference(
                 model_id=settings.llm_inference_id,
                 task_type="completion",
-                input=user_message,
+                input=full_prompt,
             )
             response_text = inference_resp.get("completion", [{}])[0].get("result", "Unable to generate response.")
         except Exception as e:
