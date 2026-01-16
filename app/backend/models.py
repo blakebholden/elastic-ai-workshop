@@ -31,6 +31,7 @@ class ChatRequest(BaseModel):
     document_id: str = Field(..., description="Document ID for context")
     message: str = Field(..., description="User message")
     chat_history: List[dict] = Field(default=[], description="Previous messages")
+    conversation_id: Optional[str] = Field(default=None, description="Conversation ID for multi-turn")
 
 
 class SummarizeRequest(BaseModel):
@@ -98,6 +99,7 @@ class ChatResponse(BaseModel):
     """Chat response."""
     response: str
     document_id: str
+    conversation_id: Optional[str] = Field(default=None, description="Conversation ID for multi-turn")
 
 
 class GeneralChatResponse(BaseModel):

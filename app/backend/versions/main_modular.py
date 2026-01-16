@@ -599,11 +599,13 @@ RESPONSE:"""
 @app.post("/chat/document", response_model=ChatResponse, tags=["Chat"])
 async def chat_with_document(request: ChatRequest):
     """
-    Chat about a specific document using RAG.
+    Chat about a specific document using Agent Builder.
 
-    Retrieves the document content and uses it as context for the LLM
-    to answer questions about the incident.
+    Retrieves the document content and includes it as context when
+    calling the Agent Builder API. Conversations are persisted in Kibana.
     """
+    import httpx
+
     settings = get_settings()
 
     # Get the document
@@ -636,33 +638,70 @@ Narrative:
 {document.get('narrative', 'No narrative available.')}
 """
 
-    # Build chat prompt
-    user_message = f"""Based on this incident report:
+    # Build message with document context
+    user_message = f"""I'm asking about this specific incident report:
 
 {context}
 
-User question: {request.message}"""
+My question: {request.message}"""
 
-    # Call LLM via Elasticsearch Inference API
+    # Check if Agent Builder is available
+    if not settings.kibana_url or not settings.agent_enabled:
+        # Fallback to direct inference if Agent Builder not configured
+        try:
+            inference_resp = await es_client.inference.inference(
+                model_id=settings.llm_inference_id,
+                task_type="completion",
+                input=user_message,
+            )
+            response_text = inference_resp.get("completion", [{}])[0].get("result", "Unable to generate response.")
+            return ChatResponse(response=response_text, document_id=request.document_id, conversation_id=None)
+        except Exception as e:
+            logger.warning(f"Direct inference failed: {e}")
+            raise HTTPException(status_code=503, detail="LLM service unavailable")
+
+    # Call Agent Builder API
     try:
-        inference_resp = await es_client.inference.inference(
-            model_id=settings.llm_inference_id,
-            task_type="completion",
-            input=user_message,
-        )
-        response_text = inference_resp.get("completion", [{}])[0].get("result", "Unable to generate response.")
-    except Exception as e:
-        logger.warning(f"Chat with document LLM call failed: {e}, using fallback")
-        # Generate a simple fallback response based on document content
-        response_text = f"I found information about this {document.get('incident_type', 'incident')}:\n\n"
-        response_text += f"• Location: {document.get('address_block', 'Unknown')}, {document.get('neighborhood', '')} ({document.get('district', '')} District)\n"
-        response_text += f"• Date/Time: {document.get('incident_datetime', 'Unknown')}\n"
-        response_text += f"• Resolution: {document.get('resolution', 'Unknown')}\n"
-        if document.get('estimated_loss', 0) > 0:
-            response_text += f"• Estimated Loss: ${document.get('estimated_loss', 0):,.2f}\n"
-        response_text += f"\n(Note: AI summary unavailable - showing key facts from the report)"
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            request_body = {
+                "input": user_message,
+                "agent_id": settings.agent_id,
+            }
+            if request.conversation_id:
+                request_body["conversation_id"] = request.conversation_id
 
-    return ChatResponse(response=response_text, document_id=request.document_id)
+            response = await client.post(
+                f"{settings.kibana_url}/api/agent_builder/converse",
+                headers={
+                    "kbn-xsrf": "true",
+                    "Authorization": f"ApiKey {settings.elasticsearch_api_key}",
+                    "Content-Type": "application/json",
+                },
+                json=request_body
+            )
+
+            if response.status_code != 200:
+                logger.error(f"Agent API error: {response.status_code} - {response.text}")
+                raise HTTPException(status_code=response.status_code, detail=f"Agent API error: {response.text}")
+
+            result = response.json()
+
+    except httpx.TimeoutException:
+        logger.error("Agent API request timed out")
+        raise HTTPException(status_code=504, detail="Agent request timed out")
+    except httpx.RequestError as e:
+        logger.error(f"Agent API connection error: {e}")
+        raise HTTPException(status_code=503, detail=f"Could not connect to Agent Builder: {str(e)}")
+
+    # Extract response
+    response_obj = result.get("response", {})
+    response_text = response_obj.get("message", "") if isinstance(response_obj, dict) else str(response_obj)
+
+    return ChatResponse(
+        response=response_text or "No response from agent.",
+        document_id=request.document_id,
+        conversation_id=result.get("conversation_id")
+    )
 
 
 @app.post("/agent/chat", response_model=AgentChatResponse, tags=["Agent"])
