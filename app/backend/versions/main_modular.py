@@ -420,7 +420,7 @@ async def get_documents_for_map(
         resp = await es_client.search(index=settings.elasticsearch_index, body=query)
         return {
             "total": resp["hits"]["total"]["value"],
-            "documents": [hit["_source"] for hit in resp["hits"]["hits"]]
+            "incidents": [hit["_source"] for hit in resp["hits"]["hits"]]
         }
     except Exception as e:
         logger.error(f"Map documents query failed: {e}")
