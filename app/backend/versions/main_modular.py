@@ -8,6 +8,7 @@ This version imports search and RAG logic from separate modules:
 Users edit those modules during challenges 6 and 8.
 """
 import logging
+import time
 from contextlib import asynccontextmanager
 from typing import Optional
 
@@ -17,6 +18,7 @@ from starlette.responses import StreamingResponse
 from elasticsearch import AsyncElasticsearch, NotFoundError
 
 from config import get_settings
+from metrics import create_metrics_index, log_llm_metrics, log_agent_metrics, log_search_metrics
 from models import (
     SearchRequest,
     FilteredSearchRequest,
@@ -64,6 +66,9 @@ async def lifespan(app: FastAPI):
 
     es_client = AsyncElasticsearch(**es_config)
     logger.info(f"Connected to Elasticsearch at {settings.elasticsearch_url}")
+
+    # Create metrics index for observability
+    await create_metrics_index(es_client)
 
     yield
 
@@ -241,6 +246,7 @@ async def hybrid_search(request: HybridSearchRequest):
 
     NOTE: This endpoint uses functions from hybrid.py - edit that file!
     """
+    start_time = time.time()
     settings = get_settings()
 
     # Build queries using functions from hybrid.py
@@ -257,7 +263,20 @@ async def hybrid_search(request: HybridSearchRequest):
 
     try:
         resp = await es_client.search(index=settings.elasticsearch_index, body=rrf_query)
-        return _format_search_response(resp, "hybrid")
+        result = _format_search_response(resp, "hybrid")
+
+        # Log search metrics
+        latency_ms = (time.time() - start_time) * 1000
+        await log_search_metrics(
+            es_client=es_client,
+            search_type="hybrid",
+            query=request.query,
+            latency_ms=latency_ms,
+            result_count=result.total,
+            success=True
+        )
+
+        return result
     except Exception as e:
         logger.error(f"Hybrid search failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -444,6 +463,7 @@ async def rag_summarize(request: SummarizeRequest):
 
     NOTE: This endpoint uses functions from rag.py - edit that file!
     """
+    start_time = time.time()
     settings = get_settings()
 
     # Step 1: RETRIEVE - Use function from rag.py
@@ -492,6 +512,17 @@ async def rag_summarize(request: SummarizeRequest):
         elif document.get("injuries_reported"):
             summary += "• Injuries were reported"
 
+    # Log metrics
+    latency_ms = (time.time() - start_time) * 1000
+    await log_llm_metrics(
+        es_client=es_client,
+        endpoint="/rag/summarize",
+        prompt=prompt,
+        response=summary,
+        latency_ms=latency_ms,
+        success=True
+    )
+
     return SummaryResponse(summary=summary, document_id=request.document_id)
 
 
@@ -502,6 +533,7 @@ async def rag_summarize(request: SummarizeRequest):
 @app.post("/chat", response_model=GeneralChatResponse, tags=["Chat"])
 async def general_chat(request: GeneralChatRequest):
     """General RAG chat - search and generate response."""
+    start_time = time.time()
     settings = get_settings()
 
     if not settings.chat_enabled:
@@ -593,6 +625,17 @@ RESPONSE:"""
             sources=sources,
             source_count=len(sources)
         )
+
+    # Log metrics
+    latency_ms = (time.time() - start_time) * 1000
+    await log_llm_metrics(
+        es_client=es_client,
+        endpoint="/chat",
+        prompt=prompt,
+        response=response_text,
+        latency_ms=latency_ms,
+        success=True
+    )
 
     return GeneralChatResponse(response=response_text, sources=sources, source_count=len(sources))
 
@@ -710,6 +753,7 @@ async def agent_chat(request: AgentChatRequest):
     """Chat with Agent Builder."""
     import httpx
 
+    start_time = time.time()
     settings = get_settings()
 
     if not settings.agent_enabled:
@@ -761,6 +805,17 @@ async def agent_chat(request: AgentChatRequest):
     # Extract response message
     response_obj = result.get("response", {})
     response_message = response_obj.get("message", "") if isinstance(response_obj, dict) else str(response_obj)
+
+    # Log agent metrics
+    latency_ms = (time.time() - start_time) * 1000
+    await log_agent_metrics(
+        es_client=es_client,
+        message=request.message,
+        response=response_message or "",
+        latency_ms=latency_ms,
+        tool_calls=len(tool_calls),
+        success=True
+    )
 
     return AgentChatResponse(
         response=response_message or "No response from agent.",
