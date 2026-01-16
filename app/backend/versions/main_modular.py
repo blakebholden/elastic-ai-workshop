@@ -54,7 +54,10 @@ async def lifespan(app: FastAPI):
     settings = get_settings()
 
     # Initialize Elasticsearch client
-    es_config = {"hosts": [settings.elasticsearch_url]}
+    es_config = {
+        "hosts": [settings.elasticsearch_url],
+        "request_timeout": 60,  # 60 seconds for LLM inference calls
+    }
     if settings.elasticsearch_api_key:
         es_config["api_key"] = settings.elasticsearch_api_key
 
