@@ -17,6 +17,15 @@ services:
       - AGENT_ID=${AGENT_ID:-police-investigation-assistant}
       - KIBANA_URL=${KIBANA_URL}
       - DEBUG=${DEBUG:-false}
+      # Metrics / Observability
+      - METRICS_ENABLED=${METRICS_ENABLED:-false}
+      - METRICS_INDEX=${METRICS_INDEX:-app-metrics}
+      - SESSION_ID=${SESSION_ID:-default}
+      # Remote metrics for instructor dashboard
+      - REMOTE_METRICS_ENABLED=${REMOTE_METRICS_ENABLED:-false}
+      - REMOTE_METRICS_URL=${REMOTE_METRICS_URL}
+      - REMOTE_METRICS_API_KEY=${REMOTE_METRICS_API_KEY}
+      - REMOTE_METRICS_INDEX=${REMOTE_METRICS_INDEX:-workshop-metrics}
     volumes:
       # Mount backend source for hot-reload
       - ./backend:/app

@@ -41,6 +41,7 @@ from models import (
 # Import from modules - users edit these files!
 from hybrid import build_keyword_query, build_semantic_query, build_rrf_query
 from rag import retrieve_document, build_prompt, generate_summary
+from validation import validate_chat_input
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -541,6 +542,11 @@ async def general_chat(request: GeneralChatRequest):
             status_code=403,
             detail="Chat feature is not enabled. Set CHAT_ENABLED=true in environment."
         )
+
+    # Validate input (users implement this in validation.py)
+    is_valid, error_message = validate_chat_input(request.message)
+    if not is_valid:
+        raise HTTPException(status_code=400, detail=error_message)
 
     # Search for relevant incidents
     search_query = {
