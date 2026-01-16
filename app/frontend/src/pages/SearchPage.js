@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import { Search, FileText, Brain, Layers, Filter, MapPin, Calendar, AlertTriangle, DollarSign, Star, Lock } from 'lucide-react';
 import DocumentModal from '../components/DocumentModal';
@@ -64,6 +65,7 @@ const DISTRICTS = [
 const SEVERITIES = ['All Severities', 'Felony', 'Misdemeanor'];
 
 function SearchPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [searchType, setSearchType] = useState('keyword');
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
@@ -71,6 +73,7 @@ function SearchPage() {
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
   const [selectedDoc, setSelectedDoc] = useState(null);
+  const [openDocumentTab, setOpenDocumentTab] = useState(null);
   const [hybridEnabled, setHybridEnabled] = useState(false);
   const [featuresLoaded, setFeaturesLoaded] = useState(false);
 
@@ -78,6 +81,30 @@ function SearchPage() {
   const [incidentType, setIncidentType] = useState('All Types');
   const [district, setDistrict] = useState('All Districts');
   const [severity, setSeverity] = useState('All Severities');
+
+  // Handle openDocument URL param (for returning from map)
+  useEffect(() => {
+    const openDocId = searchParams.get('openDocument');
+    const tab = searchParams.get('tab');
+    if (openDocId) {
+      // Fetch the document and open the modal
+      const fetchAndOpenDocument = async () => {
+        try {
+          const resp = await axios.get(`${API_BASE}/document/${encodeURIComponent(openDocId)}`);
+          const docData = { id: resp.data.id, ...resp.data.source };
+          setSelectedDoc(docData);
+          setOpenDocumentTab(tab || 'content');
+          // Clean up URL params
+          searchParams.delete('openDocument');
+          searchParams.delete('tab');
+          setSearchParams(searchParams, { replace: true });
+        } catch (err) {
+          console.error('Failed to fetch document:', err);
+        }
+      };
+      fetchAndOpenDocument();
+    }
+  }, [searchParams, setSearchParams]);
 
   // Fetch feature flags and recent documents on mount
   useEffect(() => {
@@ -384,7 +411,11 @@ function SearchPage() {
       {selectedDoc && (
         <DocumentModal
           document={selectedDoc}
-          onClose={() => setSelectedDoc(null)}
+          onClose={() => {
+            setSelectedDoc(null);
+            setOpenDocumentTab(null);
+          }}
+          initialTab={openDocumentTab}
         />
       )}
     </div>

@@ -1,8 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import axios from 'axios';
 import ReactMarkdown from 'react-markdown';
-import { MessageCircle, X, Send, Loader, Lock, Bot, Zap, MapPin, Cog, Database, Brain, Check, AlertCircle } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { MessageCircle, X, Send, Loader, Lock, Bot, Zap, MapPin, Cog, Database, Brain, Check, AlertCircle, Copy } from 'lucide-react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 
 const API_BASE = process.env.REACT_APP_API_URL || '';
 
@@ -17,6 +17,7 @@ function ChatWidget() {
   const [chatLoading, setChatLoading] = useState(false);
   const [showTooltip, setShowTooltip] = useState(false);
   const [conversationId, setConversationId] = useState(null);
+  const [copiedIdx, setCopiedIdx] = useState(null);
 
   // Streaming state
   const [streamingMessage, setStreamingMessage] = useState('');
@@ -30,14 +31,63 @@ function ChatWidget() {
   const messagesEndRef = useRef(null);
   const abortControllerRef = useRef(null);
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // Check for openChat URL param to auto-open
+  useEffect(() => {
+    if (searchParams.get('openChat') === 'true' && chatEnabled) {
+      setIsOpen(true);
+      // Clean up the URL param
+      searchParams.delete('openChat');
+      setSearchParams(searchParams, { replace: true });
+    }
+  }, [searchParams, setSearchParams, chatEnabled]);
 
   // Handle "View on Map" click
   const handleViewOnMap = (incidentIds) => {
     if (incidentIds && incidentIds.length > 0) {
+      // Save conversation state before navigating
+      sessionStorage.setItem('chatWidget_messages', JSON.stringify(messages));
+      sessionStorage.setItem('chatWidget_conversationId', conversationId || '');
+      sessionStorage.setItem('chatWidget_useAgent', useAgent.toString());
+
       const ids = incidentIds.join(',');
-      navigate(`/map?highlight=${encodeURIComponent(ids)}`);
+      navigate(`/map?highlight=${encodeURIComponent(ids)}&from=widget`);
       setIsOpen(false);
     }
+  };
+
+  // Restore conversation when returning from map
+  useEffect(() => {
+    if (searchParams.get('openChat') === 'true') {
+      const savedMessages = sessionStorage.getItem('chatWidget_messages');
+      const savedConversationId = sessionStorage.getItem('chatWidget_conversationId');
+      const savedUseAgent = sessionStorage.getItem('chatWidget_useAgent');
+
+      if (savedMessages) {
+        try {
+          setMessages(JSON.parse(savedMessages));
+          sessionStorage.removeItem('chatWidget_messages');
+        } catch (e) {
+          console.error('Failed to restore messages:', e);
+        }
+      }
+      if (savedConversationId) {
+        setConversationId(savedConversationId);
+        sessionStorage.removeItem('chatWidget_conversationId');
+      }
+      if (savedUseAgent !== null) {
+        setUseAgent(savedUseAgent === 'true');
+        sessionStorage.removeItem('chatWidget_useAgent');
+      }
+    }
+  }, [searchParams]);
+
+  // Extract incident IDs from text (e.g., INC-2024-001234)
+  const extractIncidentIds = (text) => {
+    if (!text) return [];
+    const matches = text.match(/INC-\d{4}-\d+/g) || [];
+    return [...new Set(matches)];
   };
 
   // Check if sources contain incident IDs
@@ -136,7 +186,9 @@ function ChatWidget() {
           if (parsed.type === 'event') {
             currentEventType = parsed.value;
           } else if (parsed.type === 'data' && currentEventType) {
-            const data = parsed.value;
+            // Unwrap nested data structure - API returns {data: {...}}
+            const rawData = parsed.value;
+            const data = rawData?.data || rawData;
 
             switch (currentEventType) {
               case 'conversation_id_set':
@@ -217,7 +269,10 @@ function ChatWidget() {
                 break;
 
               case 'error':
-                throw new Error(data.error || 'Stream error');
+                const errorMsg = typeof data.error === 'object'
+                  ? (data.error.message || JSON.stringify(data.error))
+                  : (data.error || 'Stream error');
+                throw new Error(errorMsg);
 
               default:
                 break;
@@ -330,6 +385,16 @@ function ChatWidget() {
     setUseAgent(!useAgent);
     setMessages([]);
     setConversationId(null);
+  };
+
+  const handleCopyMessage = async (content, idx) => {
+    try {
+      await navigator.clipboard.writeText(content);
+      setCopiedIdx(idx);
+      setTimeout(() => setCopiedIdx(null), 2000);
+    } catch (err) {
+      console.error('Failed to copy:', err);
+    }
   };
 
   // Render streaming progress
@@ -486,47 +551,69 @@ function ChatWidget() {
               </div>
             )}
 
-            {messages.map((msg, idx) => (
-              <div key={idx} className={`chat-widget-message ${msg.role}`}>
-                {/* Tool calls indicator for agent responses */}
-                {msg.toolCalls && msg.toolCalls.length > 0 && (
-                  <div className="chat-widget-tool-calls">
-                    {msg.toolCalls.map((tc, tcIdx) => (
-                      <div key={tcIdx} className="tool-call-badge">
-                        <Check size={12} />
-                        <span>{tc.tool}</span>
-                        {Object.keys(tc.parameters || {}).length > 0 && (
-                          <span className="tool-params">
-                            ({Object.entries(tc.parameters).map(([k, v]) => `${k}=${v}`).join(', ')})
-                          </span>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-                <div className="chat-widget-message-content">
-                  {msg.role === 'assistant' ? (
-                    <ReactMarkdown>{msg.content}</ReactMarkdown>
-                  ) : (
-                    msg.content
+            {messages.map((msg, idx) => {
+              // Extract incident IDs from message content for agent responses
+              const contentIncidentIds = msg.role === 'assistant' ? extractIncidentIds(msg.content) : [];
+              const sourceIncidentIds = (msg.sources || []).filter(s => s.startsWith('INC-'));
+              const allIncidentIds = [...new Set([...contentIncidentIds, ...sourceIncidentIds])];
+              const hasTools = msg.toolCalls && msg.toolCalls.length > 0;
+
+              return (
+                <div key={idx} className={`chat-widget-message ${msg.role} ${hasTools ? 'has-tools' : ''}`}>
+                  {/* Tool calls indicator for agent responses */}
+                  {msg.toolCalls && msg.toolCalls.length > 0 && (
+                    <div className="chat-widget-tool-calls">
+                      {msg.toolCalls.map((tc, tcIdx) => (
+                        <div key={tcIdx} className="tool-call-badge">
+                          <Check size={12} />
+                          <span>{tc.tool}</span>
+                          {Object.keys(tc.parameters || {}).length > 0 && (
+                            <span className="tool-params">
+                              ({Object.entries(tc.parameters).map(([k, v]) => `${k}=${v}`).join(', ')})
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
                   )}
-                </div>
-                {msg.sources && msg.sources.length > 0 && (
-                  <div className="chat-widget-sources">
-                    Sources: {msg.sources.join(', ')}
-                    {hasIncidentIds(msg.sources) && (
-                      <button
-                        className="chat-widget-map-btn"
-                        onClick={() => handleViewOnMap(msg.sources.filter(s => s.startsWith('INC-')))}
-                      >
-                        <MapPin size={14} />
-                        View on Map
-                      </button>
+                  <div className="chat-widget-message-content">
+                    {msg.role === 'assistant' ? (
+                      <ReactMarkdown>{msg.content}</ReactMarkdown>
+                    ) : (
+                      msg.content
                     )}
                   </div>
-                )}
-              </div>
-            ))}
+                  {/* Show sources if available */}
+                  {msg.sources && msg.sources.length > 0 && (
+                    <div className="chat-widget-sources">
+                      Sources: {msg.sources.join(', ')}
+                    </div>
+                  )}
+                  {/* View on Map button - show if any incident IDs found */}
+                  {allIncidentIds.length > 0 && (
+                    <div className="chat-widget-map-action">
+                      <button
+                        className="chat-widget-map-btn"
+                        onClick={() => handleViewOnMap(allIncidentIds)}
+                      >
+                        <MapPin size={14} />
+                        View {allIncidentIds.length} incident{allIncidentIds.length > 1 ? 's' : ''} on Map
+                      </button>
+                    </div>
+                  )}
+                  {/* Copy button for assistant messages */}
+                  {msg.role === 'assistant' && (
+                    <button
+                      className="chat-copy-btn"
+                      onClick={() => handleCopyMessage(msg.content, idx)}
+                      title="Copy response"
+                    >
+                      {copiedIdx === idx ? <Check size={14} /> : <Copy size={14} />}
+                    </button>
+                  )}
+                </div>
+              );
+            })}
 
             {/* Loading/Streaming progress */}
             {chatLoading && (

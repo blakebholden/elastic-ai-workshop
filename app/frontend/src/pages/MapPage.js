@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { MapContainer, TileLayer, CircleMarker, Popup, useMap } from 'react-leaflet';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { RefreshCw, Filter, Layers, X } from 'lucide-react';
+import { RefreshCw, Filter, Layers, X, ArrowLeft, MessageCircle } from 'lucide-react';
 import 'leaflet/dist/leaflet.css';
 
 const API_BASE = process.env.REACT_APP_API_URL || '';
@@ -65,6 +65,7 @@ function FitBounds({ incidents }) {
 
 function MapPage() {
   const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
   const [incidents, setIncidents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -77,12 +78,23 @@ function MapPage() {
   const defaultCenter = [47.58, -122.30];
   const defaultZoom = 11;
 
-  // Read highlighted incidents from URL on mount
+  // Track source for return navigation
+  const [returnSource, setReturnSource] = useState(null);
+  const [returnDocId, setReturnDocId] = useState(null);
+
+  // Read highlighted incidents and source from URL on mount
   useEffect(() => {
     const highlight = searchParams.get('highlight');
     if (highlight) {
       const ids = highlight.split(',').map(id => decodeURIComponent(id.trim()));
       setHighlightedIds(ids);
+    }
+    // Track where user came from
+    const from = searchParams.get('from');
+    const docId = searchParams.get('docId');
+    if (from) {
+      setReturnSource(from);
+      if (docId) setReturnDocId(docId);
     }
   }, [searchParams]);
 
@@ -180,12 +192,34 @@ function MapPage() {
       {/* Highlight Banner */}
       {highlightedIds.length > 0 && (
         <div className="map-highlight-banner">
-          <span>
-            Showing {highlightedIds.length} incident{highlightedIds.length > 1 ? 's' : ''} from chat
-          </span>
+          <div className="banner-left">
+            {returnSource && (
+              <>
+                <button
+                  onClick={() => {
+                    if (returnSource === 'widget') {
+                      navigate('/?openChat=true');
+                    } else if (returnSource === 'document' && returnDocId) {
+                      navigate(`/?openDocument=${encodeURIComponent(returnDocId)}&tab=chat`);
+                    } else {
+                      navigate(-1);
+                    }
+                  }}
+                  className="back-to-chat-btn"
+                >
+                  <ArrowLeft size={14} />
+                  {returnSource === 'document' ? 'Back to Incident' : 'Back to Chat'}
+                </button>
+                <span className="banner-divider">|</span>
+              </>
+            )}
+            <span>
+              Showing {highlightedIds.length} incident{highlightedIds.length > 1 ? 's' : ''} from chat
+            </span>
+          </div>
           <button onClick={clearHighlight} className="clear-highlight-btn">
             <X size={14} />
-            Clear
+            Show All Incidents
           </button>
         </div>
       )}

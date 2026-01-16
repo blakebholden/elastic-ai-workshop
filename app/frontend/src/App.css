@@ -841,6 +841,17 @@ body {
   color: white;
 }
 
+.chat-widget-map-action {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.chat-widget-map-action .chat-widget-map-btn {
+  font-size: 11px;
+  padding: 6px 10px;
+}
+
 .chat-widget-input-area {
   display: flex;
   gap: 8px;
@@ -952,33 +963,147 @@ body {
   transform: translateX(16px);
 }
 
-/* Tool Calls Display */
+/* Tool Calls Display - Styled as completed steps */
 .chat-widget-tool-calls {
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-bottom: 8px;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 12px;
 }
 
 .tool-call-badge {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 4px 8px;
-  background: #e6f8f0;
+  gap: 8px;
+  padding: 6px 0;
   color: #00726b;
-  font-size: 10px;
-  border-radius: 4px;
-  font-family: monospace;
+  font-size: 12px;
 }
 
 .tool-call-badge svg {
   flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  padding: 2px;
+  background: #00726b;
+  color: white;
+  border-radius: 50%;
+}
+
+.tool-call-badge span {
+  font-family: inherit;
+}
+
+.tool-call-badge code {
+  background: rgba(0, 114, 107, 0.1);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: 'Monaco', 'Menlo', monospace;
+  font-size: 11px;
 }
 
 .tool-params {
   color: #69707d;
-  font-size: 9px;
+  font-size: 10px;
+  margin-left: 4px;
+}
+
+/* Assistant message with agent styling */
+.chat-widget-message.assistant.has-tools {
+  background: linear-gradient(135deg, #f5f7fa 0%, #e6f0f8 100%);
+  padding: 12px;
+}
+
+.chat-widget-message.assistant.has-tools .chat-widget-message-content {
+  background: white;
+  padding: 12px 14px;
+  border-radius: 8px;
+  border: 1px solid #e0e5eb;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+/* Response card styling for document modal chat too */
+.chat-message.assistant .chat-widget-tool-calls {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+
+.chat-message.assistant .tool-call-badge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  color: #00726b;
+  font-size: 12px;
+}
+
+.chat-message.assistant .tool-call-badge svg {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  padding: 2px;
+  background: #00726b;
+  color: white;
+  border-radius: 50%;
+}
+
+/* Document modal chat - agent message styling */
+.chat-message.assistant.has-tools {
+  background: linear-gradient(135deg, #f5f7fa 0%, #e6f0f8 100%);
+  padding: 12px;
+  border-radius: 12px;
+}
+
+.chat-message.assistant.has-tools .chat-widget-message-content {
+  background: white;
+  padding: 12px 14px;
+  border-radius: 8px;
+  border: 1px solid #e0e5eb;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+/* Copy button for chat messages */
+.chat-copy-btn {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid #d3dae6;
+  border-radius: 6px;
+  color: #69707d;
+  cursor: pointer;
+  opacity: 0;
+  transition: all 0.15s ease;
+}
+
+.chat-widget-message:hover .chat-copy-btn,
+.chat-message:hover .chat-copy-btn {
+  opacity: 1;
+}
+
+.chat-copy-btn:hover {
+  background: #f5f7fa;
+  border-color: #0077cc;
+  color: #0077cc;
+}
+
+.chat-copy-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* Ensure message container is relative for positioning */
+.chat-widget-message.assistant,
+.chat-message.assistant {
+  position: relative;
 }
 
 /* Spinning animation for loader */
@@ -1006,13 +1131,43 @@ body {
 .map-highlight-banner {
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: space-between;
   gap: 12px;
   padding: 10px 16px;
   background: linear-gradient(135deg, #0077cc 0%, #005fa3 100%);
   color: white;
   font-size: 14px;
   font-weight: 500;
+}
+
+.map-highlight-banner .banner-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.map-highlight-banner .banner-divider {
+  opacity: 0.5;
+}
+
+.back-to-chat-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: 4px;
+  color: white;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.back-to-chat-btn:hover {
+  background: rgba(255, 255, 255, 0.3);
+  border-color: rgba(255, 255, 255, 0.6);
 }
 
 .clear-highlight-btn {

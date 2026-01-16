@@ -2,13 +2,13 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import ReactMarkdown from 'react-markdown';
-import { X, Send, MessageCircle, FileText, Loader, Lock, MapPin, Brain, Database, Bot, Check, Cog } from 'lucide-react';
+import { X, Send, MessageCircle, FileText, Loader, Lock, MapPin, Brain, Database, Bot, Check, Cog, Copy } from 'lucide-react';
 
 const API_BASE = process.env.REACT_APP_API_URL || '';
 
-function DocumentModal({ document, onClose }) {
+function DocumentModal({ document, onClose, initialTab }) {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState('content');
+  const [activeTab, setActiveTab] = useState(initialTab || 'content');
   const [chatMessages, setChatMessages] = useState([]);
   const [inputMessage, setInputMessage] = useState('');
   const [chatLoading, setChatLoading] = useState(false);
@@ -20,6 +20,7 @@ function DocumentModal({ document, onClose }) {
   const [agentEnabled, setAgentEnabled] = useState(false);
   const [showLlmTooltip, setShowLlmTooltip] = useState(false);
   const [conversationId, setConversationId] = useState(null);
+  const [copiedIdx, setCopiedIdx] = useState(null);
 
   // Streaming state
   const [streamingMessage, setStreamingMessage] = useState('');
@@ -36,11 +37,42 @@ function DocumentModal({ document, onClose }) {
   // Handle "View on Map" click
   const handleViewOnMap = (incidentIds) => {
     if (incidentIds && incidentIds.length > 0) {
+      const docId = document.id || document.incident_id;
+
+      // Save conversation state before navigating
+      const chatState = {
+        messages: chatMessages,
+        conversationId: conversationId,
+        docId: docId,
+      };
+      sessionStorage.setItem('documentModal_chatState', JSON.stringify(chatState));
+
       const ids = incidentIds.join(',');
-      navigate(`/map?highlight=${encodeURIComponent(ids)}`);
+      navigate(`/map?highlight=${encodeURIComponent(ids)}&from=document&docId=${encodeURIComponent(docId)}`);
       onClose();
     }
   };
+
+  // Restore conversation when returning from map (via initialTab='chat')
+  useEffect(() => {
+    if (initialTab === 'chat') {
+      const savedState = sessionStorage.getItem('documentModal_chatState');
+      if (savedState) {
+        try {
+          const state = JSON.parse(savedState);
+          const currentDocId = document.id || document.incident_id;
+          // Only restore if it's the same document
+          if (state.docId === currentDocId) {
+            setChatMessages(state.messages || []);
+            setConversationId(state.conversationId || null);
+          }
+          sessionStorage.removeItem('documentModal_chatState');
+        } catch (e) {
+          console.error('Failed to restore chat state:', e);
+        }
+      }
+    }
+  }, [initialTab, document]);
 
   // Extract incident IDs from text
   const extractIncidentIds = (text) => {
@@ -147,7 +179,12 @@ function DocumentModal({ document, onClose }) {
           if (parsed.type === 'event') {
             currentEventType = parsed.value;
           } else if (parsed.type === 'data' && currentEventType) {
-            const data = parsed.value;
+            // Unwrap nested data structure - API returns {data: {...}}
+            const rawData = parsed.value;
+            const data = rawData?.data || rawData;
+
+            // Debug: log all events to understand the API response format
+            console.log('SSE Event:', currentEventType, 'Data:', data);
 
             switch (currentEventType) {
               case 'conversation_id_set':
@@ -209,24 +246,43 @@ function DocumentModal({ document, onClose }) {
                 break;
 
               case 'message_chunk':
-                if (data.text_chunk) {
-                  finalMessage += data.text_chunk;
+                // Handle various possible field names from Agent Builder API
+                const chunk = data.text_chunk || data.chunk || data.content || data.text || data.delta || data.message || '';
+                if (chunk) {
+                  finalMessage += chunk;
                   setStreamingMessage(finalMessage);
                 }
                 break;
 
               case 'message_complete':
-                if (data.message_content) {
-                  finalMessage = data.message_content;
+              case 'response_complete':
+              case 'generation_complete':
+                // Handle various possible field names for final message
+                const completeMessage = data.message_content || data.message || data.content || data.text || data.response || '';
+                if (completeMessage) {
+                  finalMessage = completeMessage;
                   setStreamingMessage(finalMessage);
                 }
+                break;
+
+              case 'response':
+                // Some APIs send the final response as a 'response' event
+                if (typeof data === 'string') {
+                  finalMessage = data;
+                } else if (data.message || data.content || data.text) {
+                  finalMessage = data.message || data.content || data.text;
+                }
+                setStreamingMessage(finalMessage);
                 break;
 
               case 'round_complete':
                 break;
 
               case 'error':
-                throw new Error(data.error || 'Stream error');
+                const errorMsg = typeof data.error === 'object'
+                  ? (data.error.message || JSON.stringify(data.error))
+                  : (data.error || 'Stream error');
+                throw new Error(errorMsg);
 
               default:
                 break;
@@ -235,6 +291,10 @@ function DocumentModal({ document, onClose }) {
           }
         }
       }
+
+      // Debug: log final state
+      console.log('Stream complete. Final message:', finalMessage);
+      console.log('Collected tool calls:', collectedToolCalls);
 
       if (newConversationId) {
         setConversationId(newConversationId);
@@ -340,6 +400,16 @@ function DocumentModal({ document, onClose }) {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSendMessage();
+    }
+  };
+
+  const handleCopyMessage = async (content, idx) => {
+    try {
+      await navigator.clipboard.writeText(content);
+      setCopiedIdx(idx);
+      setTimeout(() => setCopiedIdx(null), 2000);
+    } catch (err) {
+      console.error('Failed to copy:', err);
     }
   };
 
@@ -699,8 +769,9 @@ function DocumentModal({ document, onClose }) {
 
               {chatMessages.map((msg, idx) => {
                 const incidentIds = msg.role === 'assistant' ? extractIncidentIds(msg.content) : [];
+                const hasTools = msg.toolCalls && msg.toolCalls.length > 0;
                 return (
-                  <div key={idx} className={`chat-message ${msg.role}`}>
+                  <div key={idx} className={`chat-message ${msg.role} ${hasTools ? 'has-tools' : ''}`}>
                     {/* Tool calls */}
                     {msg.toolCalls && msg.toolCalls.length > 0 && (
                       <div className="chat-widget-tool-calls" style={{ marginBottom: '8px' }}>
@@ -752,6 +823,16 @@ function DocumentModal({ document, onClose }) {
                           View on Map
                         </button>
                       </div>
+                    )}
+                    {/* Copy button for assistant messages */}
+                    {msg.role === 'assistant' && (
+                      <button
+                        className="chat-copy-btn"
+                        onClick={() => handleCopyMessage(msg.content, idx)}
+                        title="Copy response"
+                      >
+                        {copiedIdx === idx ? <Check size={14} /> : <Copy size={14} />}
+                      </button>
                     )}
                   </div>
                 );
