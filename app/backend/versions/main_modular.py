@@ -99,7 +99,7 @@ async def health_check():
     try:
         # Check ES connection with a simple info call (works in Serverless)
         es_info = await es_client.info()
-        index_exists = await es_client.indices.exists(index=settings.elasticsearch_index)
+        index_exists = bool(await es_client.indices.exists(index=settings.elasticsearch_index))
         doc_count = 0
         if index_exists:
             count_resp = await es_client.count(index=settings.elasticsearch_index)
